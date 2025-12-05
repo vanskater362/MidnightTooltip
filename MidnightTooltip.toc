@@ -1,0 +1,14 @@
+## MidnightTooltip.toc
+## Interface: 120000
+## Title: MidnightTooltip
+## Notes: A tooltip enhancement addon for World of Warcraft.
+## Author: Vanskater
+## Version: 1.00.04
+## SavedVariables: MidnightTooltipDB
+## IconTexture: Interface\Icons\INV_Misc_Book_11
+## X-Category: Tooltip
+## X-Website: https://www.curseforge.com/wow/addons/midnight-tooltip
+## X-Curse-Project-ID: 1396843
+
+config.lua
+MidnightTooltip.lua
