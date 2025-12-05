@@ -1,0 +1,3 @@
+-- This file contains core functionality for the MidnightTooltip addon. 
+-- It may include initialization routines, configuration settings, 
+-- and essential functions that are used throughout the addon.
