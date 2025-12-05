@@ -20,16 +20,7 @@ MidnightTooltip is a World of Warcraft addon designed to enhance the tooltip fun
 
 ## Usage
 
-Once installed, the MidnightTooltip addon will automatically enhance your tooltips. You can customize the settings through the in-game options menu, which can be accessed by typing `/midnighttooltip` in the chat.
-
-## Localization
-
-MidnightTooltip supports multiple languages. Currently, it includes:
-
-- English (US)
-- German (DE)
-
-The addon will automatically detect your game language and load the appropriate localization file.
+Once installed, the MidnightTooltip addon will automatically enhance your tooltips. You can customize the settings through the in-game options menu, which can be accessed by typing `/midnighttooltip` or `/mtt` in the chat.
 
 ## Contributing
 
