@@ -76,16 +76,52 @@ qualityBorderCheckbox:SetScript("OnClick", function(self)
     print("|cFF00FFFFMidnightTooltip|r: Quality borders " .. (MidnightTooltipDB.enableQualityBorder and "enabled" or "disabled") .. ". Reload UI to apply changes.")
 end)
 
--- Show Guild Colors checkbox
+-- My Guild Color Input (Row 3, Left Column)
+local myGuildColorLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+myGuildColorLabel:SetPoint("TOPLEFT", qualityBorderCheckbox, "BOTTOMLEFT", 0, -8)
+myGuildColorLabel:SetText("My Guild Color:")
+
+local myGuildColorInput = CreateFrame("EditBox", nil, optionsPanel, "InputBoxTemplate")
+myGuildColorInput:SetPoint("LEFT", myGuildColorLabel, "RIGHT", 8, 0)
+myGuildColorInput:SetSize(70, 20)
+myGuildColorInput:SetAutoFocus(false)
+myGuildColorInput:SetMaxLetters(7)
+local myR = math.floor((MidnightTooltipDB.customGuildColorR or 1.0) * 255)
+local myG = math.floor((MidnightTooltipDB.customGuildColorG or 0.2) * 255)
+local myB = math.floor((MidnightTooltipDB.customGuildColorB or 1.0) * 255)
+myGuildColorInput:SetText(string.format("#%02X%02X%02X", myR, myG, myB))
+myGuildColorInput:SetTextColor(myR/255, myG/255, myB/255, 1)
+myGuildColorInput:SetScript("OnEnterPressed", function(self)
+    local hex = self:GetText():match("#?(%x%x%x%x%x%x)")
+    if hex and #hex == 6 then
+        local r = tonumber(hex:sub(1,2), 16) / 255
+        local g = tonumber(hex:sub(3,4), 16) / 255
+        local b = tonumber(hex:sub(5,6), 16) / 255
+        MidnightTooltipDB.customGuildColorR = r
+        MidnightTooltipDB.customGuildColorG = g
+        MidnightTooltipDB.customGuildColorB = b
+        self:SetText(string.format("#%02X%02X%02X", math.floor(r*255), math.floor(g*255), math.floor(b*255)))
+        self:SetTextColor(r, g, b, 1)
+        print("|cFF00FFFFMidnightTooltip|r: My guild color updated.")
+        self:ClearFocus()
+    else
+        print("|cFF00FFFFMidnightTooltip|r: Invalid hex code. Use format: #RRGGBB (e.g., #FF33FF)")
+    end
+end)
+myGuildColorInput:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+end)
+
+-- Show Guild Colors checkbox (Row 4, Left Column)
 local guildColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipGuildColors", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-guildColorsCheckbox:SetPoint("TOPLEFT", qualityBorderCheckbox, "BOTTOMLEFT", 0, -8)
+guildColorsCheckbox:SetPoint("TOPLEFT", myGuildColorLabel, "BOTTOMLEFT", 0, -8)
 guildColorsCheckbox.Text:SetText("Show guild name colors")
 guildColorsCheckbox.tooltipText = "When enabled, guild names will be colored differently for your guild members"
 guildColorsCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showGuildColors = self:GetChecked()
 end)
 
--- Show Player Status checkbox
+-- Show Player Status checkbox (Row 5, Left Column)
 local playerStatusCheckbox = CreateFrame("CheckButton", "MidnightTooltipPlayerStatus", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 playerStatusCheckbox:SetPoint("TOPLEFT", guildColorsCheckbox, "BOTTOMLEFT", 0, -8)
 playerStatusCheckbox.Text:SetText("Show player status (AFK/DND)")
@@ -104,34 +140,70 @@ mountInfoCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Right Column (5 checkboxes)
--- Show Item Level checkbox
-local itemLevelCheckbox = CreateFrame("CheckButton", "MidnightTooltipItemLevel", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-itemLevelCheckbox:SetPoint("TOPLEFT", cursorAnchorCheckbox, "TOPRIGHT", 200, 0)
-itemLevelCheckbox.Text:SetText("Show player item level")
-itemLevelCheckbox.tooltipText = "When enabled, shows the player's average item level"
-itemLevelCheckbox:SetScript("OnClick", function(self)
+-- Show Item Level checkbox (Row 1, Right Column)
+local iLevelCheckbox = CreateFrame("CheckButton", "MidnightTooltipItemLevel", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+iLevelCheckbox:SetPoint("TOPLEFT", cursorAnchorCheckbox, "TOPRIGHT", 200, 0)
+iLevelCheckbox.Text:SetText("Show player item level")
+iLevelCheckbox.tooltipText = "When enabled, shows the player's average item level"
+iLevelCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showItemLevel = self:GetChecked()
 end)
 
--- Show Faction checkbox
+-- Show Faction checkbox (Row 2, Right Column)
 local factionCheckbox = CreateFrame("CheckButton", "MidnightTooltipFaction", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-factionCheckbox:SetPoint("TOPLEFT", itemLevelCheckbox, "BOTTOMLEFT", 0, -8)
+factionCheckbox:SetPoint("TOPLEFT", iLevelCheckbox, "BOTTOMLEFT", 0, -8)
 factionCheckbox.Text:SetText("Show faction (Horde/Alliance)")
 factionCheckbox.tooltipText = "When enabled, the faction line will show red for Horde and blue for Alliance"
 factionCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showFaction = self:GetChecked()
 end)
 
--- Show Role Icon checkbox
+-- Other Guild Color Input (Row 3, Right Column)
+local otherGuildColorLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+otherGuildColorLabel:SetPoint("TOPLEFT", factionCheckbox, "BOTTOMLEFT", 0, -8)
+otherGuildColorLabel:SetText("Other Guild Color:")
+
+local otherGuildColorInput = CreateFrame("EditBox", nil, optionsPanel, "InputBoxTemplate")
+otherGuildColorInput:SetPoint("LEFT", otherGuildColorLabel, "RIGHT", 8, 0)
+otherGuildColorInput:SetSize(70, 20)
+otherGuildColorInput:SetAutoFocus(false)
+otherGuildColorInput:SetMaxLetters(7)
+local otherR = math.floor((MidnightTooltipDB.customOtherGuildColorR or 0.0) * 255)
+local otherG = math.floor((MidnightTooltipDB.customOtherGuildColorG or 0.502) * 255)
+local otherB = math.floor((MidnightTooltipDB.customOtherGuildColorB or 0.8) * 255)
+otherGuildColorInput:SetText(string.format("#%02X%02X%02X", otherR, otherG, otherB))
+otherGuildColorInput:SetTextColor(otherR/255, otherG/255, otherB/255, 1)
+otherGuildColorInput:SetScript("OnEnterPressed", function(self)
+    local hex = self:GetText():match("#?(%x%x%x%x%x%x)")
+    if hex and #hex == 6 then
+        local r = tonumber(hex:sub(1,2), 16) / 255
+        local g = tonumber(hex:sub(3,4), 16) / 255
+        local b = tonumber(hex:sub(5,6), 16) / 255
+        MidnightTooltipDB.customOtherGuildColorR = r
+        MidnightTooltipDB.customOtherGuildColorG = g
+        MidnightTooltipDB.customOtherGuildColorB = b
+        self:SetText(string.format("#%02X%02X%02X", math.floor(r*255), math.floor(g*255), math.floor(b*255)))
+        self:SetTextColor(r, g, b, 1)
+        print("|cFF00FFFFMidnightTooltip|r: Other guild color updated.")
+        self:ClearFocus()
+    else
+        print("|cFF00FFFFMidnightTooltip|r: Invalid hex code. Use format: #RRGGBB (e.g., #0080CC)")
+    end
+end)
+otherGuildColorInput:SetScript("OnEscapePressed", function(self)
+    self:ClearFocus()
+end)
+
+-- Show Role Icon checkbox (Row 4, Right Column)
 local roleIconCheckbox = CreateFrame("CheckButton", "MidnightTooltipRoleIcon", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-roleIconCheckbox:SetPoint("TOPLEFT", factionCheckbox, "BOTTOMLEFT", 0, -8)
+roleIconCheckbox:SetPoint("TOPLEFT", otherGuildColorLabel, "BOTTOMLEFT", 0, -8)
 roleIconCheckbox.Text:SetText("Show role icon (Tank/Healer/DPS)")
 roleIconCheckbox.tooltipText = "When enabled, shows the player's role icon"
 roleIconCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showRoleIcon = self:GetChecked()
 end)
 
--- Show Mythic+ Rating checkbox
+-- Show Mythic+ Rating checkbox (Row 5, Right Column)
 local mythicRatingCheckbox = CreateFrame("CheckButton", "MidnightTooltipMythicRating", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 mythicRatingCheckbox:SetPoint("TOPLEFT", roleIconCheckbox, "BOTTOMLEFT", 0, -8)
 mythicRatingCheckbox.Text:SetText("Show Mythic+ rating")
@@ -140,7 +212,7 @@ mythicRatingCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showMythicRating = self:GetChecked()
 end)
 
--- Show Target of Target checkbox
+-- Show Target of Target checkbox (Row 6, Right Column)
 local targetOfTargetCheckbox = CreateFrame("CheckButton", "MidnightTooltipTargetOfTarget", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 targetOfTargetCheckbox:SetPoint("TOPLEFT", mythicRatingCheckbox, "BOTTOMLEFT", 0, -8)
 targetOfTargetCheckbox.Text:SetText("Show target of target")
@@ -288,17 +360,26 @@ local function RefreshUI()
     guildColorsCheckbox:SetChecked(MidnightTooltipDB.showGuildColors)
     playerStatusCheckbox:SetChecked(MidnightTooltipDB.showPlayerStatus)
     mountInfoCheckbox:SetChecked(MidnightTooltipDB.showMountInfo)
-    itemLevelCheckbox:SetChecked(MidnightTooltipDB.showItemLevel)
+    iLevelCheckbox:SetChecked(MidnightTooltipDB.showItemLevel)
     factionCheckbox:SetChecked(MidnightTooltipDB.showFaction)
     roleIconCheckbox:SetChecked(MidnightTooltipDB.showRoleIcon)
     mythicRatingCheckbox:SetChecked(MidnightTooltipDB.showMythicRating)
     targetOfTargetCheckbox:SetChecked(MidnightTooltipDB.showTargetOfTarget)
     offsetXSlider:SetValue(MidnightTooltipDB.cursorOffsetX)
     offsetYSlider:SetValue(MidnightTooltipDB.cursorOffsetY)
+    -- Refresh color inputs as hex codes
+    local r1 = math.floor((MidnightTooltipDB.customGuildColorR or 1.0) * 255)
+    local g1 = math.floor((MidnightTooltipDB.customGuildColorG or 0.2) * 255)
+    local b1 = math.floor((MidnightTooltipDB.customGuildColorB or 1.0) * 255)
+    myGuildColorInput:SetText(string.format("#%02X%02X%02X", r1, g1, b1))
+    myGuildColorInput:SetTextColor(r1/255, g1/255, b1/255, 1)
+    
+    local r2 = math.floor((MidnightTooltipDB.customOtherGuildColorR or 0.0) * 255)
+    local g2 = math.floor((MidnightTooltipDB.customOtherGuildColorG or 0.502) * 255)
+    local b2 = math.floor((MidnightTooltipDB.customOtherGuildColorB or 0.8) * 255)
+    otherGuildColorInput:SetText(string.format("#%02X%02X%02X", r2, g2, b2))
+    otherGuildColorInput:SetTextColor(r2/255, g2/255, b2/255, 1)
 end
-
--- Set initial values after initialization
-RefreshUI()
 
 -- Re-enable OnValueChanged after initialization
 isInitializing = false
