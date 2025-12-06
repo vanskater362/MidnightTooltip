@@ -3,7 +3,7 @@
 ## Title: MidnightTooltip
 ## Notes: A tooltip enhancement addon for World of Warcraft.
 ## Author: Vanskater
-## Version: 1.00.04
+## Version: 1.00.05
 ## SavedVariables: MidnightTooltipDB
 ## IconTexture: Interface\Icons\INV_Misc_Book_11
 ## X-Category: Tooltip
