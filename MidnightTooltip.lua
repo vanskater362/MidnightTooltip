@@ -3,25 +3,34 @@
 
 local addonName, addon = ...
 local MidnightTooltip = {}
-local originalSetDefaultAnchor = GameTooltip_SetDefaultAnchor
 
 -- Cache settings to avoid repeated lookups
 local settingsCache = {}
 local function RefreshSettingsCache()
+    -- Check both MidnightTooltipDB (standalone) and addon.GetSetting (with config)
     local db = MidnightTooltipDB or {}
     local function getSetting(key, default)
-        if addon and addon.GetSetting then
-            return addon.GetSetting(key)
+        -- First try direct DB access
+        if db[key] ~= nil then 
+            return db[key]
         end
-        local val = db[key]
-        if val ~= nil then return val end
+        -- Then try addon function
+        if addon and addon.GetSetting then
+            local val = addon.GetSetting(key)
+            if val ~= nil then return val end
+        end
         return default
     end
     
     settingsCache.enableCursorAnchor = getSetting("enableCursorAnchor", true)
+    settingsCache.cursorOnlyMode = getSetting("cursorOnlyMode", false)
+    settingsCache.hideTooltipsInCombat = getSetting("hideTooltipsInCombat", false)
     settingsCache.enableQualityBorder = getSetting("enableQualityBorder", true)
+    settingsCache.anchorPoint = getSetting("anchorPoint", "BOTTOM")
     settingsCache.cursorOffsetX = getSetting("cursorOffsetX", 0)
     settingsCache.cursorOffsetY = getSetting("cursorOffsetY", 0)
+    settingsCache.fadeOutDelay = getSetting("fadeOutDelay", 0.2)
+    settingsCache.showClassColors = getSetting("showClassColors", true)
     settingsCache.showGuildColors = getSetting("showGuildColors", true)
     settingsCache.showPlayerStatus = getSetting("showPlayerStatus", true)
     settingsCache.showMountInfo = getSetting("showMountInfo", true)
@@ -46,33 +55,84 @@ local gsub = string.gsub
 local format = string.format
 local floor = math.floor
 
--- Override the SetDefaultAnchor function completely
-function GameTooltip_SetDefaultAnchor(tooltip, parent)
-    if InCombatLockdown() then
-        return
-    end
+-- Cache whether we're in a restricted environment (dungeon/raid)
+local isInRestrictedInstance = false
+
+-- Update the cached restricted state
+local function UpdateRestrictedState()
+    local inInstance, instanceType = IsInInstance()
     
-    if settingsCache.enableCursorAnchor then
-        tooltip:SetOwner(parent, "ANCHOR_CURSOR")
+    if not inInstance then 
+        isInRestrictedInstance = false
     else
-        originalSetDefaultAnchor(tooltip, parent)
+        -- Disable in dungeons (party), raids, and scenarios
+        isInRestrictedInstance = instanceType == "party" or instanceType == "raid" or instanceType == "scenario"
     end
 end
 
+-- Force refresh hooks with current settings
+local function RefreshHooks()
+    RefreshSettingsCache()
+    UpdateRestrictedState()
+    -- Clear cached position values
+    cachedScale = nil
+    cachedAnchorPoint = nil
+    cachedOffsetX = nil
+    cachedOffsetY = nil
+end
+
 -- Hook to update tooltip position with offset
-local lastUpdateTime = 0
-local UPDATE_THROTTLE = 0.01 -- Update every 0.01 seconds (100 FPS)
+local cachedScale, cachedAnchorPoint, cachedOffsetX, cachedOffsetY
 local function UpdateTooltipPosition(tooltip, elapsed)
-    lastUpdateTime = lastUpdateTime + elapsed
-    if lastUpdateTime < UPDATE_THROTTLE then return end
-    lastUpdateTime = 0
+    -- Skip if tooltip has no owner
+    local owner = tooltip:GetOwner()
+    if not owner then return end
     
-    if not settingsCache.enableCursorAnchor then return end
+    -- Check if tooltip is anchored to a specific UI element (not UIParent or cursor-following)
+    -- This prevents us from fighting with game's default positioning for quest tooltips, etc.
+    local point, relativeTo, relativePoint = tooltip:GetPoint(1)
+    if relativeTo and relativeTo ~= UIParent and relativeTo ~= tooltip:GetParent() then
+        -- Tooltip is anchored to a specific frame (like a quest button), don't touch it
+        return
+    end
     
-    tooltip:ClearAllPoints()
+    -- Skip quest tooltips and other default-anchored tooltips
+    -- Check if the owner is a quest frame, world map frame, or other UI element that should use default positioning
+    local ownerName = owner:GetName()
+    if ownerName then
+        -- Don't reposition tooltips owned by quest frames, world map, achievement frames, etc.
+        if ownerName:find("Quest") or ownerName:find("WorldMap") or ownerName:find("Achievement") or 
+           ownerName:find("Objective") or ownerName:find("Scenario") or ownerName:find("QuestInfo") then
+            return
+        end
+    end
+    
+    -- Only reposition tooltips that show items or units (not quests, achievements, etc)
+    local hasItem = tooltip.GetItem and select(1, pcall(tooltip.GetItem, tooltip))
+    local hasUnit = tooltip.GetUnit and select(1, pcall(tooltip.GetUnit, tooltip)) and select(3, pcall(tooltip.GetUnit, tooltip))
+    
+    -- If tooltip doesn't have an item or unit, it's probably a quest/achievement tooltip - don't reposition
+    if not hasItem and not hasUnit then
+        return
+    end
+    
+    -- Cache these values to avoid repeated lookups
+    if not cachedAnchorPoint then
+        cachedAnchorPoint = settingsCache.anchorPoint or "BOTTOM"
+        cachedOffsetX = settingsCache.cursorOffsetX
+        cachedOffsetY = settingsCache.cursorOffsetY
+    end
+    
     local x, y = GetCursorPosition()
-    local scale = tooltip:GetEffectiveScale()
-    tooltip:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (x / scale) + settingsCache.cursorOffsetX, (y / scale) + settingsCache.cursorOffsetY)
+    
+    -- Cache scale calculation
+    if not cachedScale then
+        cachedScale = tooltip:GetEffectiveScale()
+    end
+    
+    -- Always reposition to cursor
+    tooltip:ClearAllPoints()
+    tooltip:SetPoint(cachedAnchorPoint, UIParent, "BOTTOMLEFT", (x / cachedScale) + cachedOffsetX, (y / cachedScale) + cachedOffsetY)
 end
 
 -- Helper to set border color
@@ -87,10 +147,6 @@ end
 
 -- Function to color tooltip border based on item quality
 local function ColorTooltipBorder(tooltip, data)
-    if InCombatLockdown() then
-        return
-    end
-    
     if not settingsCache.enableQualityBorder then
         SetBorderColor(tooltip, 1, 1, 1)
         return
@@ -114,19 +170,30 @@ end
 
 -- Function to color tooltip text and border based on unit class/faction
 local function ColorTooltipBorderByUnit(tooltip)
-    if InCombatLockdown() then
-        return
-    end
-    
-    local _, unit = tooltip:GetUnit()
-    if not unit then
+    -- Wrap in pcall to prevent tainting secure quest tooltips
+    -- GetUnit returns (name, unit), so pcall returns (success, name, unit)
+    local success, _, unit = pcall(tooltip.GetUnit, tooltip)
+    if not success or not unit then
         if not settingsCache.enableQualityBorder then
             SetBorderColor(tooltip, 1, 1, 1)
         end
         return
     end
     
+    -- Check if unit actually exists (prevents issues with quest/item tooltips)
+    if not UnitExists(unit) then
+        return
+    end
+    
+    -- Additional check: only process if this is actually a player or NPC unit
+    -- Skip if tooltip name doesn't match GameTooltip (prevents quest/item tooltip processing)
+    if tooltip:GetName() ~= "GameTooltip" then
+        return
+    end
+    
+    -- Direct UnitIsPlayer check (pcall unnecessary here)
     local isPlayer = UnitIsPlayer(unit)
+    
     if isPlayer then
         local _, class = UnitClass(unit)
         if not class then return end
@@ -151,23 +218,22 @@ local function ColorTooltipBorderByUnit(tooltip)
                 end
                 nameText:SetText(prefix .. StripColorCodes(name))
             end
-            nameText:SetTextColor(color.r, color.g, color.b)
+            if settingsCache.showClassColors then
+                nameText:SetTextColor(color.r, color.g, color.b)
+            end
         end
         
         -- Get guild name and check mount status
-        local guildName, isGuildMate
-        if settingsCache.showGuildColors then
-            guildName = GetGuildInfo(unit)
-            isGuildMate = UnitIsInMyGuild(unit)
-        end
+        local guildName = settingsCache.showGuildColors and GetGuildInfo(unit)
+        local isGuildMate = guildName and UnitIsInMyGuild(unit)
         
         local mountName, mountOwned
         if settingsCache.showMountInfo then
             for i = 1, 40 do
                 local auraData = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
-                if not auraData or not auraData.spellId then
-                    if not auraData then break end
-                else
+                if not auraData then break end
+                
+                if auraData.spellId then
                     local mountID = C_MountJournal.GetMountFromSpell(auraData.spellId)
                     if mountID then
                         mountName = auraData.name
@@ -180,15 +246,14 @@ local function ColorTooltipBorderByUnit(tooltip)
         end
         
         -- Color all lines (class, spec, guild, etc)
-        for i = 2, tooltip:NumLines() do
+        local numLines = tooltip:NumLines()
+        for i = 2, numLines do
             local lineText = _G[tooltipName .. "TextLeft" .. i]
             if lineText then
-                local success, text = pcall(lineText.GetText, lineText)
-                if success and text and type(text) == "string" then
-                    -- Skip lines that might contain cooldown info (these are often secret values)
-                    local isCooldownLine = text:match("Recharging") or text:match("sec") or text:match("min") or text:match("Cooldown") or text:match("cooldown")
-                    
-                    if not isCooldownLine then
+                local text = lineText:GetText()
+                if text then
+                    -- Skip lines that might contain cooldown info - combined pattern for efficiency
+                    if not text:find("Recharging") and not text:find("sec") and not text:find("min") and not text:find("ooldown") then
                         local cleanText = StripColorCodes(text)
                         
                         if guildName and cleanText == guildName then
@@ -208,7 +273,7 @@ local function ColorTooltipBorderByUnit(tooltip)
                             else
                                 lineText:SetText("")  -- Hide the line
                             end
-                        elseif not cleanText:match("^Level") then
+                        elseif settingsCache.showClassColors and not cleanText:match("^Level") then
                             lineText:SetTextColor(color.r, color.g, color.b)
                         end
                     end
@@ -314,7 +379,7 @@ local function ColorTooltipBorderByUnit(tooltip)
         end
         
         -- Color border
-        if settingsCache.enableQualityBorder then
+        if settingsCache.enableQualityBorder and settingsCache.showClassColors then
             SetBorderColor(tooltip, color.r, color.g, color.b)
         end
     else
@@ -335,49 +400,141 @@ local function ColorTooltipBorderByUnit(tooltip)
 end
 
 function MidnightTooltip:OnInitialize()
-    -- Wait for config to load, then initialize settings cache
-    C_Timer.After(0, function()
-        RefreshSettingsCache()
+    -- Initialize settings cache with defaults first
+    RefreshSettingsCache()
+    
+    -- Initialize restricted instance state
+    UpdateRestrictedState()
+    
+    -- Reload settings after saved variables are loaded
+    C_Timer.After(0.5, function()
+        RefreshHooks()
     end)
     
-    -- Hook OnUpdate to continuously update tooltip position
+    -- Update restricted state when zone changes
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    frame:SetScript("OnEvent", function()
+        UpdateRestrictedState()
+    end)
+    
+    -- Track fade out timing
+    local fadeStartTime = nil
+    
+    -- Reset fade timer and immediately position tooltip when it shows
+    GameTooltip:HookScript("OnShow", function(self)
+        -- Hide immediately if in combat in restricted instance and setting is enabled
+        if isInRestrictedInstance and settingsCache.hideTooltipsInCombat and InCombatLockdown() then
+            self:Hide()
+            return
+        end
+        
+        fadeStartTime = nil
+        self:SetAlpha(1)
+        
+        -- Immediately position at cursor when tooltip appears
+        if settingsCache.enableCursorAnchor then
+            self:ClearAllPoints()
+            local x, y = GetCursorPosition()
+            local scale = self:GetEffectiveScale()
+            local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
+            local offsetX = settingsCache.cursorOffsetX or 0
+            local offsetY = settingsCache.cursorOffsetY or 0
+            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", (x / scale) + offsetX, (y / scale) + offsetY)
+        end
+    end)
+    
+    -- Override tooltip fade out delay
+    hooksecurefunc(GameTooltip, "FadeOut", function(self)
+        if settingsCache.fadeOutDelay and settingsCache.fadeOutDelay >= 0 then
+            if settingsCache.fadeOutDelay == 0 then
+                -- Instant hide for 0 delay
+                self:Hide()
+                fadeStartTime = nil
+                self:SetAlpha(1)
+            else
+                -- Cancel the default fade by showing the tooltip again
+                self:Show()
+                -- Store when we started the custom fade
+                fadeStartTime = GetTime()
+            end
+        end
+    end)
+    
+    -- Hook OnUpdate to continuously update tooltip position and handle custom fade
     GameTooltip:HookScript("OnUpdate", function(self, elapsed)
+        -- Hide tooltip if in combat in restricted instance and setting is enabled
+        if isInRestrictedInstance and settingsCache.hideTooltipsInCombat and InCombatLockdown() then
+            if self:IsShown() then
+                self:Hide()
+            end
+            return
+        end
+        
+        -- Reposition if enabled and tooltip is shown (cursor positioning works in dungeons)
         if settingsCache.enableCursorAnchor and self:IsShown() then
             UpdateTooltipPosition(self, elapsed)
+        end
+        
+        -- Handle custom fade out
+        if fadeStartTime then
+            local fadeTime = GetTime() - fadeStartTime
+            local fadeDelay = settingsCache.fadeOutDelay or 0.2
+            
+            if fadeTime >= fadeDelay then
+                -- Fade complete, hide the tooltip
+                self:Hide()
+                fadeStartTime = nil
+                self:SetAlpha(1)
+            else
+                -- Gradually reduce alpha
+                local fadeProgress = fadeTime / fadeDelay
+                self:SetAlpha(1 - fadeProgress)
+            end
+        else
+            -- Ensure tooltip is fully opaque when not fading
+            if self:GetAlpha() < 1 then
+                self:SetAlpha(1)
+            end
         end
     end)
     
     -- Hook tooltip item display to color border
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, ColorTooltipBorder)
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+        -- Skip in dungeons/raids or cursor-only mode
+        if isInRestrictedInstance or settingsCache.cursorOnlyMode then return end
+        ColorTooltipBorder(tooltip, data)
+    end)
     
     -- Hook tooltip unit display to color border by class/reaction
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip, data)
+        -- Cancel any pending fade and reposition when new unit content is set (fixes fast hover flicker)
+        if tooltip == GameTooltip then
+            fadeStartTime = nil
+            tooltip:SetAlpha(1)
+            -- Immediately reposition to cursor
+            if settingsCache.enableCursorAnchor then
+                tooltip:ClearAllPoints()
+                local x, y = GetCursorPosition()
+                local scale = tooltip:GetEffectiveScale()
+                local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
+                local offsetX = settingsCache.cursorOffsetX or 0
+                local offsetY = settingsCache.cursorOffsetY or 0
+                tooltip:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", (x / scale) + offsetX, (y / scale) + offsetY)
+            end
+        end
+        -- Skip in dungeons/raids or cursor-only mode
+        if isInRestrictedInstance or settingsCache.cursorOnlyMode then return end
         ColorTooltipBorderByUnit(tooltip)
     end)
     
-    -- Handle ItemRefTooltip (shift-click links)
-    if ItemRefTooltip then
-        ItemRefTooltip:HookScript("OnShow", function(self)
-            self:SetOwner(UIParent, "ANCHOR_CURSOR")
-        end)
-    end
-    
     -- Handle shopping tooltips (comparison tooltips)
-    if ShoppingTooltip1 then
-        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
-            if tooltip == ShoppingTooltip1 then
-                ColorTooltipBorder(tooltip, data)
-            end
-        end)
-    end
-    
-    if ShoppingTooltip2 then
-        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
-            if tooltip == ShoppingTooltip2 then
-                ColorTooltipBorder(tooltip, data)
-            end
-        end)
-    end
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+        if tooltip == ShoppingTooltip1 or tooltip == ShoppingTooltip2 then
+            ColorTooltipBorder(tooltip, data)
+        end
+    end)
     
     -- Hook the comparison tooltip function to position them properly
     hooksecurefunc("GameTooltip_ShowCompareItem", function(self, anchorFrame)
@@ -393,31 +550,29 @@ function MidnightTooltip:OnInitialize()
 end
 
 function MidnightTooltip:OnEnable()
-    print("|cFF00FFFFMidnightTooltip|r: Loaded. Type /mtt to open options.")
-end
-
--- Slash command to reload UI
-SLASH_MIDNIGHTRELOAD1 = "/mttr"
-SlashCmdList["MIDNIGHTRELOAD"] = function()
-    ReloadUI()
-end
-
--- Slash command
-SLASH_MIDNIGHT1 = "/midnighttooltip"
-SLASH_MIDNIGHT2 = "/mtt"
-SlashCmdList["MIDNIGHT"] = function(msg)
-    -- Refresh cache when opening options
-    RefreshSettingsCache()
-    if addon and addon.OpenOptions then
-        addon.OpenOptions()
-    else
-        print("|cFF00FFFFMidnightTooltip|r: Opening settings...")
-        C_Timer.After(0.1, function()
-            if addon and addon.OpenOptions then
-                addon.OpenOptions()
-            end
-        end)
+    -- Register slash commands
+    SLASH_MIDNIGHTRELOAD1 = "/mttr"
+    SlashCmdList["MIDNIGHTRELOAD"] = function()
+        ReloadUI()
     end
+    
+    SLASH_MIDNIGHT1 = "/midnighttooltip"
+    SLASH_MIDNIGHT2 = "/mtt"
+    SlashCmdList["MIDNIGHT"] = function(msg)
+        if addon and addon.OpenOptions then
+            addon.OpenOptions()
+        else
+            print("|cFF00FFFFMidnightTooltip|r: Config addon not loaded.")
+        end
+    end
+    
+    SLASH_MIDNIGHTCURSOR1 = "/mttcursor"
+    SlashCmdList["MIDNIGHTCURSOR"] = function(msg)
+        MidnightTooltipDB.cursorOnlyMode = not MidnightTooltipDB.cursorOnlyMode
+        print("|cFF00FFFFMidnightTooltip|r: Cursor-only mode " .. (MidnightTooltipDB.cursorOnlyMode and "enabled" or "disabled") .. ". Type /reload to apply changes.")
+    end
+    
+    print("|cFF00FFFFMidnightTooltip|r: Loaded. Type /mtt for options or /mttcursor to toggle cursor-only mode.")
 end
 
 -- Main entry point
@@ -425,6 +580,10 @@ function MidnightTooltip:Start()
     self:OnInitialize()
     self:OnEnable()
 end
+
+-- Export RefreshSettingsCache to addon
+addon.RefreshSettingsCache = RefreshSettingsCache
+addon.RefreshHooks = RefreshHooks
 
 -- Start the addon
 MidnightTooltip:Start()
