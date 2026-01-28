@@ -529,24 +529,24 @@ function MidnightTooltip:OnInitialize()
         ColorTooltipBorderByUnit(tooltip)
     end)
     
-    -- Handle shopping tooltips (comparison tooltips)
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
-        if tooltip == ShoppingTooltip1 or tooltip == ShoppingTooltip2 then
-            ColorTooltipBorder(tooltip, data)
-        end
-    end)
+    -- -- Handle shopping tooltips (comparison tooltips)
+    -- TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+    --     if tooltip == ShoppingTooltip1 or tooltip == ShoppingTooltip2 then
+    --         ColorTooltipBorder(tooltip, data)
+    --     end
+    -- end)
     
-    -- Hook the comparison tooltip function to position them properly
-    hooksecurefunc("GameTooltip_ShowCompareItem", function(self, anchorFrame)
-        if ShoppingTooltip1 and ShoppingTooltip1:IsShown() then
-            ShoppingTooltip1:ClearAllPoints()
-            ShoppingTooltip1:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -2, 0)
-        end
-        if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
-            ShoppingTooltip2:ClearAllPoints()
-            ShoppingTooltip2:SetPoint("TOPRIGHT", ShoppingTooltip1, "TOPLEFT", -2, 0)
-        end
-    end)
+    -- -- Hook the comparison tooltip function to position them properly
+    -- hooksecurefunc("GameTooltip_ShowCompareItem", function(self, anchorFrame)
+    --     if ShoppingTooltip1 and ShoppingTooltip1:IsShown() then
+    --         ShoppingTooltip1:ClearAllPoints()
+    --         ShoppingTooltip1:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -2, 0)
+    --     end
+    --     if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
+    --         ShoppingTooltip2:ClearAllPoints()
+    --         ShoppingTooltip2:SetPoint("TOPRIGHT", ShoppingTooltip1, "TOPLEFT", -2, 0)
+    --     end
+    -- end)
 end
 
 function MidnightTooltip:OnEnable()
