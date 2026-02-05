@@ -596,12 +596,16 @@ function MidnightTooltip:OnInitialize()
             -- Find the unit with this GUID and get their ilvl
             for _, unit in ipairs({"target", "mouseover", "player"}) do
                 local guidSuccess, unitGuid = pcall(UnitGUID, unit)
-                if guidSuccess and unitGuid == guid then
-                    local success, ilvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
-                    if success and ilvl and ilvl > 0 then
-                        inspectedIlvls[guid] = ilvl
+                if guidSuccess and unitGuid then
+                    -- Use pcall to safely compare GUIDs (can be secret values in combat/battlegrounds)
+                    local compareSuccess, matches = pcall(function() return unitGuid == guid end)
+                    if compareSuccess and matches then
+                        local success, ilvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
+                        if success and ilvl and ilvl > 0 then
+                            inspectedIlvls[guid] = ilvl
+                        end
+                        break
                     end
-                    break
                 end
             end
         end
