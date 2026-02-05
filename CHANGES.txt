@@ -1,0 +1,16 @@
+tag 1ba1d53e23524c64f0d52e9ff614204b72a5c08c 1.00.05-Release
+Author:	Vanskater362 <Vanskater362@gmail.com>
+Date:	Sat Dec 6 15:02:07 2025 -0600
+
+commit d3528773613f59791f2bc33b4fc07368435bc0b7
+Author: Vanskater362 <Vanskater362@gmail.com>
+Date:   Sat Dec 6 15:01:40 2025 -0600
+
+    update version
+
+commit 1fa8771e1e9e9e2d22facbea16d8e17da2b0c18b
+Author: Vanskater362 <Vanskater362@gmail.com>
+Date:   Sat Dec 6 15:00:22 2025 -0600
+
+    add color input box for guild color
+
