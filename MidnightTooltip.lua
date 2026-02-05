@@ -68,6 +68,17 @@ local format = string.format
 local floor = math.floor
 local abs = math.abs
 
+-- Item level color thresholds
+local ILVL_LEGENDARY_THRESHOLD = 285
+local ILVL_EPIC_THRESHOLD = 270
+local ILVL_RARE_THRESHOLD = 260
+
+-- Screen positioning constants
+local SCREEN_EDGE_THRESHOLD = 0.25
+
+-- Tooltip positioning offsets
+local TOOLTIP_SPACING = 2
+
 -- Cache whether we're in a restricted environment (dungeon/raid)
 local isInRestrictedInstance = false
 
@@ -112,11 +123,7 @@ end
 
 -- Helper function to check if tooltip is for a WorldMap element
 local function IsWorldMapTooltip()
-    -- Check if WorldMapFrame exists and is shown
-    if WorldMapFrame and WorldMapFrame:IsShown() then
-        return true
-    end
-    return false
+    return WorldMapFrame and WorldMapFrame:IsShown()
 end
 
 -- Inspect throttling to avoid hitting rate limits
@@ -245,14 +252,14 @@ end
 
 -- Helper to get item level color based on value
 local function GetItemLevelColor(ilvl)
-    if ilvl >= 285 then
-        return "|cFFFF8000" -- Legendary orange (Mythic raid/high M+ vault)
-    elseif ilvl >= 270 then
-        return "|cFFA335EE" -- Epic purple (Heroic raid/high M+)
-    elseif ilvl >= 260 then
-        return "|cFF0070DD" -- Rare blue (Normal raid/mid M+)
+    if ilvl >= ILVL_LEGENDARY_THRESHOLD then
+        return "|cFFFF8000" -- Legendary orange
+    elseif ilvl >= ILVL_EPIC_THRESHOLD then
+        return "|cFFA335EE" -- Epic purple
+    elseif ilvl >= ILVL_RARE_THRESHOLD then
+        return "|cFF0070DD" -- Rare blue
     else
-        return "|cFF1EFF00" -- Uncommon green (Leveling/early endgame)
+        return "|cFF1EFF00" -- Uncommon green
     end
 end
 
@@ -941,21 +948,21 @@ function MidnightTooltip:OnInitialize()
             local successRight, tooltipRight = pcall(GameTooltip.GetRight, GameTooltip)
             tooltipRight = (successRight and tooltipRight) or screenWidth
             
-            -- If tooltip is too far left (less than 25% of screen width), anchor to the right
-            if tooltipLeft < (screenWidth * 0.25) then
-                ShoppingTooltip1:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", 2, 0)
+            -- If tooltip is too far left, anchor to the right
+            if tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) then
+                ShoppingTooltip1:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", TOOLTIP_SPACING, 0)
                 
                 if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
                     ShoppingTooltip2:ClearAllPoints()
-                    ShoppingTooltip2:SetPoint("TOPLEFT", ShoppingTooltip1, "TOPRIGHT", 2, 0)
+                    ShoppingTooltip2:SetPoint("TOPLEFT", ShoppingTooltip1, "TOPRIGHT", TOOLTIP_SPACING, 0)
                 end
             else
                 -- Default: anchor to the left
-                ShoppingTooltip1:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -2, 0)
+                ShoppingTooltip1:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -TOOLTIP_SPACING, 0)
                 
                 if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
                     ShoppingTooltip2:ClearAllPoints()
-                    ShoppingTooltip2:SetPoint("TOPRIGHT", ShoppingTooltip1, "TOPLEFT", -2, 0)
+                    ShoppingTooltip2:SetPoint("TOPRIGHT", ShoppingTooltip1, "TOPLEFT", -TOOLTIP_SPACING, 0)
                 end
             end
         elseif ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
@@ -967,10 +974,10 @@ function MidnightTooltip:OnInitialize()
             tooltipLeft = (success and tooltipLeft) or 0
             local screenWidth = GetScreenWidth()
             
-            if tooltipLeft < (screenWidth * 0.25) then
-                ShoppingTooltip2:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", 2, 0)
+            if tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) then
+                ShoppingTooltip2:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", TOOLTIP_SPACING, 0)
             else
-                ShoppingTooltip2:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -2, 0)
+                ShoppingTooltip2:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -TOOLTIP_SPACING, 0)
             end
         end
     end)
@@ -985,7 +992,7 @@ function MidnightTooltip:OnEnable()
     
     SLASH_MIDNIGHT1 = "/midnighttooltip"
     SLASH_MIDNIGHT2 = "/mtt"
-    SlashCmdList["MIDNIGHT"] = function(msg)
+    SlashCmdList["MIDNIGHT"] = function()
         if addon and addon.OpenOptions then
             addon.OpenOptions()
         else
@@ -994,7 +1001,7 @@ function MidnightTooltip:OnEnable()
     end
     
     SLASH_MIDNIGHTCURSOR1 = "/mttcursor"
-    SlashCmdList["MIDNIGHTCURSOR"] = function(msg)
+    SlashCmdList["MIDNIGHTCURSOR"] = function()
         MidnightTooltipDB.cursorOnlyMode = not MidnightTooltipDB.cursorOnlyMode
         print("|cFF00FFFFMidnightTooltip|r: Cursor-only mode " .. (MidnightTooltipDB.cursorOnlyMode and "enabled" or "disabled") .. ". Type /reload to apply changes.")
     end
