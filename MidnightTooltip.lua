@@ -943,13 +943,19 @@ function MidnightTooltip:OnInitialize()
             -- Check if there's enough space on the left side of GameTooltip
             -- Use pcall to safely handle secret values that cannot be compared
             local success, tooltipLeft = pcall(GameTooltip.GetLeft, GameTooltip)
-            tooltipLeft = (success and tooltipLeft) or 0
             local screenWidth = GetScreenWidth()
-            local successRight, tooltipRight = pcall(GameTooltip.GetRight, GameTooltip)
-            tooltipRight = (successRight and tooltipRight) or screenWidth
+            local anchorRight = false
+            
+            -- Safely compare tooltipLeft (can be a secret value in some contexts like world map)
+            if success and tooltipLeft then
+                local compareSuccess, result = pcall(function() return tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) end)
+                if compareSuccess then
+                    anchorRight = result
+                end
+            end
             
             -- If tooltip is too far left, anchor to the right
-            if tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) then
+            if anchorRight then
                 ShoppingTooltip1:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", TOOLTIP_SPACING, 0)
                 
                 if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
@@ -971,10 +977,18 @@ function MidnightTooltip:OnInitialize()
             
             -- Use pcall to safely handle secret values that cannot be compared
             local success, tooltipLeft = pcall(GameTooltip.GetLeft, GameTooltip)
-            tooltipLeft = (success and tooltipLeft) or 0
             local screenWidth = GetScreenWidth()
+            local anchorRight = false
             
-            if tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) then
+            -- Safely compare tooltipLeft
+            if success and tooltipLeft then
+                local compareSuccess, result = pcall(function() return tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) end)
+                if compareSuccess then
+                    anchorRight = result
+                end
+            end
+            
+            if anchorRight then
                 ShoppingTooltip2:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", TOOLTIP_SPACING, 0)
             else
                 ShoppingTooltip2:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -TOOLTIP_SPACING, 0)
