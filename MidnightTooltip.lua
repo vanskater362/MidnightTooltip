@@ -63,10 +63,48 @@ end
 -- Pattern for stripping color codes (compiled once, localized)
 local COLOR_CODE_PATTERN = "|c%x%x%x%x%x%x%x%x"
 local COLOR_RESET_PATTERN = "|r"
+
+-- Localized global functions for performance
 local gsub = string.gsub
 local format = string.format
 local floor = math.floor
 local abs = math.abs
+local pairs = pairs
+local ipairs = ipairs
+local type = type
+local pcall = pcall
+local wipe = wipe
+local tinsert = table.insert
+local tsort = table.sort
+local GetTime = GetTime
+local UnitExists = UnitExists
+local UnitGUID = UnitGUID
+local UnitIsPlayer = UnitIsPlayer
+local UnitClass = UnitClass
+local UnitName = UnitName
+local UnitIsAFK = UnitIsAFK
+local UnitIsDND = UnitIsDND
+local UnitReaction = UnitReaction
+local UnitInParty = UnitInParty
+local UnitInRaid = UnitInRaid
+local UnitIsInMyGuild = UnitIsInMyGuild
+local UnitPlayerControlled = UnitPlayerControlled
+local UnitGroupRolesAssigned = UnitGroupRolesAssigned
+local GetCursorPosition = GetCursorPosition
+local GetScreenWidth = GetScreenWidth
+local GetGuildInfo = GetGuildInfo
+local GetAverageItemLevel = GetAverageItemLevel
+local InCombatLockdown = InCombatLockdown
+local IsInInstance = IsInInstance
+local CanInspect = CanInspect
+local NotifyInspect = NotifyInspect
+local CheckInteractDistance = CheckInteractDistance
+
+-- Cached UIParent scale (updated on UI_SCALE_CHANGED)
+local cachedUIScale = 1
+local function UpdateCachedUIScale()
+    cachedUIScale = UIParent:GetEffectiveScale()
+end
 
 -- Item level color thresholds
 local ILVL_LEGENDARY_THRESHOLD = 285
@@ -83,17 +121,19 @@ local TOOLTIP_SPACING = 2
 local isInRestrictedInstance = false
 
 -- Special frames that should use default tooltip positioning (not cursor anchored)
-local SPECIAL_FRAMES = {
-    ["Inspect"] = true,
-    ["Character"] = true,
-    ["Wardrobe"] = true,
-    ["PaperDoll"] = true,
-    ["PlayerChoice"] = true,
-    ["Quest"] = true,
-    ["Achievement"] = true,
-    ["CompactRaid"] = true,
-    ["CompactParty"] = true,
+-- Pre-compiled pattern list for special frame detection (avoids string concatenation in hot path)
+local SPECIAL_FRAME_PATTERNS = {
+    "^Inspect",
+    "^Character",
+    "^Wardrobe",
+    "^PaperDoll",
+    "^PlayerChoice",
+    "^Quest",
+    "^Achievement",
 }
+
+-- Localize string.find for performance in loops
+local strfind = string.find
 
 -- Helper function to check if a button is an assisted combat action (Single Button Assistant)
 local function IsAssistedCombatButton(owner)
@@ -113,8 +153,8 @@ end
 -- Helper function to check if owner is a special frame
 local function IsSpecialFrame(ownerName)
     if not ownerName then return false end
-    for prefix in pairs(SPECIAL_FRAMES) do
-        if ownerName:find("^" .. prefix) then
+    for i = 1, #SPECIAL_FRAME_PATTERNS do
+        if strfind(ownerName, SPECIAL_FRAME_PATTERNS[i]) then
             return true
         end
     end
@@ -347,7 +387,8 @@ local function ColorTooltipBorderByUnit(tooltip)
         
         local mountName, mountOwned
         if settingsCache.showMountInfo then
-            for i = 1, 40 do
+            -- Scan buffs for mount auras (mounts are typically in first 5-10 buffs)
+            for i = 1, 20 do
                 local auraSuccess, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
                 if not auraSuccess or not auraData then break end
                 
@@ -623,18 +664,28 @@ function MidnightTooltip:OnInitialize()
         RefreshHooks()
     end)
     
-    -- Update restricted state when zone changes
+    -- Update restricted state when zone changes, and cache UI scale
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    frame:SetScript("OnEvent", function(self, event, guid)
-        UpdateRestrictedState()
+    frame:RegisterEvent("UI_SCALE_CHANGED")
+    frame:SetScript("OnEvent", function(self, event, ...)
+        if event == "UI_SCALE_CHANGED" then
+            UpdateCachedUIScale()
+        else
+            UpdateRestrictedState()
+            -- Also update scale on world enter in case it wasn't set
+            UpdateCachedUIScale()
+        end
     end)
     
     -- Variables for tracking tooltip state
     local fadeStartTime = nil
     local lastUnitGUID = nil
     local lastUnitToken = nil
+    
+    -- Reusable table for cache cleanup (avoids garbage collection)
+    local cacheCleanupEntries = {}
     
     -- Function to clean up old inspect cache entries
     local function CleanupInspectCache()
@@ -657,14 +708,15 @@ function MidnightTooltip:OnInitialize()
         
         -- If still over limit, remove oldest entries
         if count > MAX_CACHE_SIZE then
-            local entries = {}
+            -- Reuse table instead of creating new one
+            wipe(cacheCleanupEntries)
             for guid, time in pairs(inspectedGUIDs) do
-                table.insert(entries, {guid = guid, time = time})
+                tinsert(cacheCleanupEntries, {guid = guid, time = time})
             end
-            table.sort(entries, function(a, b) return a.time < b.time end)
+            tsort(cacheCleanupEntries, function(a, b) return a.time < b.time end)
             
             for i = 1, count - MAX_CACHE_SIZE do
-                local guid = entries[i].guid
+                local guid = cacheCleanupEntries[i].guid
                 inspectedGUIDs[guid] = nil
                 inspectedIlvls[guid] = nil
             end
@@ -680,9 +732,9 @@ function MidnightTooltip:OnInitialize()
         end
         
         local owner = self:GetOwner()
-        if owner then
-            local ownerName = owner:GetName()
-            if ownerName and IsSpecialFrame(ownerName) then
+        if owner and owner.GetName then
+            local success, ownerName = pcall(owner.GetName, owner)
+            if success and ownerName and IsSpecialFrame(ownerName) then
                 -- Completely skip all modifications for special frames
                 return
             end
@@ -725,14 +777,13 @@ function MidnightTooltip:OnInitialize()
         -- Position at cursor
         if settingsCache.enableCursorAnchor then
             local x, y = GetCursorPosition()
-            local scale = UIParent:GetEffectiveScale()
             local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
             local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
             local offsetX = settingsCache.cursorOffsetX or 0
             local offsetY = settingsCache.cursorOffsetY or 0
             self:ClearAllPoints()
             -- Divide by tooltip scale to compensate for the scaled coordinate system
-            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / scale) + offsetX) / tooltipScale, ((y / scale) + offsetY) / tooltipScale)
+            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / cachedUIScale) + offsetX) / tooltipScale, ((y / cachedUIScale) + offsetY) / tooltipScale)
         end
     end)
     
@@ -776,6 +827,9 @@ function MidnightTooltip:OnInitialize()
     
     -- Hook OnUpdate to handle cursor positioning, unit changes, fading, and cache cleanup
     GameTooltip:HookScript("OnUpdate", function(self, elapsed)
+        -- Cache GetTime for this frame (called multiple times below)
+        local currentTime = GetTime()
+        
         -- Periodic cache cleanup
         lastCacheCleanup = lastCacheCleanup + elapsed
         if lastCacheCleanup >= CACHE_CLEANUP_INTERVAL then
@@ -791,9 +845,9 @@ function MidnightTooltip:OnInitialize()
                 isSpecialFrame = true
             else
                 local owner = self:GetOwner()
-                if owner then
-                    local ownerName = owner:GetName()
-                    if ownerName and IsSpecialFrame(ownerName) then
+                if owner and owner.GetName then
+                    local success, ownerName = pcall(owner.GetName, owner)
+                    if success and ownerName and IsSpecialFrame(ownerName) then
                         isSpecialFrame = true
                     elseif IsAssistedCombatButton(owner) then
                         isSpecialFrame = true
@@ -813,14 +867,13 @@ function MidnightTooltip:OnInitialize()
         -- Reposition tooltip to cursor for smooth tracking (skip for special frames)
         if not isSpecialFrame and settingsCache.enableCursorAnchor and self:IsShown() then
             local x, y = GetCursorPosition()
-            local scale = UIParent:GetEffectiveScale()
             local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
             local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
             local offsetX = settingsCache.cursorOffsetX or 0
             local offsetY = settingsCache.cursorOffsetY or 0
             self:ClearAllPoints()
             -- Divide by tooltip scale to compensate for the scaled coordinate system
-            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / scale) + offsetX) / tooltipScale, ((y / scale) + offsetY) / tooltipScale)
+            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / cachedUIScale) + offsetX) / tooltipScale, ((y / cachedUIScale) + offsetY) / tooltipScale)
         end
         
         -- Detect unit changes and reset fade state
@@ -858,7 +911,7 @@ function MidnightTooltip:OnInitialize()
                 if compareSuccess and isMouseover then
                     -- For mouseover tooltips, check if mouse is still over the unit
                     if not UnitExists("mouseover") then
-                        fadeStartTime = GetTime()
+                        fadeStartTime = currentTime
                     end
                 end
             end
@@ -866,7 +919,7 @@ function MidnightTooltip:OnInitialize()
         
         -- Handle custom fade out
         if fadeStartTime then
-            local fadeTime = GetTime() - fadeStartTime
+            local fadeTime = currentTime - fadeStartTime
             local fadeDelay = settingsCache.fadeOutDelay or 0.2
             
             if fadeTime >= fadeDelay then
