@@ -8,10 +8,10 @@ local SPACING_SMALL = -8
 local SPACING_MEDIUM = -16
 local SPACING_LARGE = -24
 local SPACING_XLARGE = -40
-local COLUMN_OFFSET = 200
 local SWATCH_SIZE = 24
 local SLIDER_WIDTH = 260
 local SLIDER_BUTTON_SIZE = 20
+local CHECKBOX_TEXT_WIDTH = 230
 
 -- Default settings
 local defaults = {
@@ -159,6 +159,31 @@ local function CreateColorPickerSwatch(parent, label, anchorTo, rKey, gKey, bKey
     return colorLabel, swatch, texture
 end
 
+local function ConfigureCheckboxText(checkbox, width)
+    if checkbox and checkbox.Text then
+        checkbox.Text:SetWidth(width or CHECKBOX_TEXT_WIDTH)
+        checkbox.Text:SetWordWrap(true)
+        checkbox.Text:SetJustifyH("LEFT")
+    end
+end
+
+local function CreateSectionFrame(parent, anchorTo, width, height)
+    local section = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    section:SetPoint("TOPLEFT", anchorTo)
+    section:SetSize(width, height)
+    section:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    section:SetBackdropColor(0.05, 0.05, 0.08, 0.55)
+    section:SetBackdropBorderColor(0.35, 0.35, 0.45, 1)
+    return section
+end
+
 -- Options panel
 local optionsPanel = CreateFrame("Frame", "MidnightTooltipOptionsPanel", UIParent)
 optionsPanel.name = "MidnightTooltip"
@@ -172,32 +197,50 @@ title:SetText("MidnightTooltip Options")
 local description = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 description:SetText("Configure tooltip behavior and appearance")
+description:SetWidth(620)
+description:SetWordWrap(true)
+description:SetJustifyH("LEFT")
+
+local leftSection = CreateSectionFrame(optionsPanel, { "TOPLEFT", description, "BOTTOMLEFT", -12, -10 }, 310, 260)
+local rightSection = CreateSectionFrame(optionsPanel, { "TOPLEFT", description, "BOTTOMLEFT", 300, -10 }, 310, 260)
+
+local UpdateAnchoringState
 
 -- Left Column (5 checkboxes)
 -- Enable Cursor Anchor checkbox
 local cursorAnchorCheckbox = CreateFrame("CheckButton", "MidnightTooltipCursorAnchor", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-cursorAnchorCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
+cursorAnchorCheckbox:SetPoint("TOPLEFT", leftSection, "TOPLEFT", 16, -20)
 cursorAnchorCheckbox.Text:SetText("Anchor tooltips to cursor")
+ConfigureCheckboxText(cursorAnchorCheckbox)
 cursorAnchorCheckbox.tooltipText = "When enabled, tooltips will follow your mouse cursor"
 cursorAnchorCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.enableCursorAnchor = self:GetChecked()
-    print("|cFF00FFFFMidnightTooltip|r: Cursor anchoring " .. (MidnightTooltipDB.enableCursorAnchor and "enabled" or "disabled") .. ". Reload UI to apply changes.")
+    if UpdateAnchoringState then
+        UpdateAnchoringState()
+    end
+    if addon and addon.RefreshSettingsCache then
+        addon.RefreshSettingsCache()
+    end
 end)
 
 -- Cursor Only Mode checkbox
 local cursorOnlyModeCheckbox = CreateFrame("CheckButton", "MidnightTooltipCursorOnlyMode", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 cursorOnlyModeCheckbox:SetPoint("TOPLEFT", cursorAnchorCheckbox, "BOTTOMLEFT", 0, -8)
 cursorOnlyModeCheckbox.Text:SetText("Cursor-only mode (no customizations)")
+ConfigureCheckboxText(cursorOnlyModeCheckbox)
 cursorOnlyModeCheckbox.tooltipText = "When enabled, only cursor positioning is active. All other customizations are disabled."
 cursorOnlyModeCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.cursorOnlyMode = self:GetChecked()
-    print("|cFF00FFFFMidnightTooltip|r: Cursor-only mode " .. (MidnightTooltipDB.cursorOnlyMode and "enabled" or "disabled") .. ". Reload UI to apply changes.")
+    if addon and addon.RefreshSettingsCache then
+        addon.RefreshSettingsCache()
+    end
 end)
 
 -- Hide Tooltips in Combat (in instances) checkbox
 local hideCombatCheckbox = CreateFrame("CheckButton", "MidnightTooltipHideCombat", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 hideCombatCheckbox:SetPoint("TOPLEFT", cursorOnlyModeCheckbox, "BOTTOMLEFT", 0, -8)
 hideCombatCheckbox.Text:SetText("Hide tooltips in combat (dungeons/raids)")
+ConfigureCheckboxText(hideCombatCheckbox)
 hideCombatCheckbox.tooltipText = "When enabled, tooltips are hidden during combat in dungeons, raids, and scenarios"
 hideCombatCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.hideTooltipsInCombat = self:GetChecked()
@@ -208,6 +251,7 @@ end)
 local qualityBorderCheckbox = CreateFrame("CheckButton", "MidnightTooltipQualityBorder", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 qualityBorderCheckbox:SetPoint("TOPLEFT", hideCombatCheckbox, "BOTTOMLEFT", 0, -8)
 qualityBorderCheckbox.Text:SetText("Color borders by item quality")
+ConfigureCheckboxText(qualityBorderCheckbox)
 qualityBorderCheckbox.tooltipText = "When enabled, item tooltip borders will be colored based on item quality"
 qualityBorderCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.enableQualityBorder = self:GetChecked()
@@ -218,6 +262,7 @@ end)
 local classColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipClassColors", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 classColorsCheckbox:SetPoint("TOPLEFT", qualityBorderCheckbox, "BOTTOMLEFT", 0, -8)
 classColorsCheckbox.Text:SetText("Color player names by class")
+ConfigureCheckboxText(classColorsCheckbox)
 classColorsCheckbox.tooltipText = "When enabled, player names and tooltip text will be colored by their class"
 classColorsCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showClassColors = self:GetChecked()
@@ -228,6 +273,7 @@ end)
 local guildColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipGuildColors", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 guildColorsCheckbox:SetPoint("TOPLEFT", classColorsCheckbox, "BOTTOMLEFT", 0, -8)
 guildColorsCheckbox.Text:SetText("Show guild name colors")
+ConfigureCheckboxText(guildColorsCheckbox)
 guildColorsCheckbox.tooltipText = "When enabled, guild names will be colored differently for your guild members"
 guildColorsCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showGuildColors = self:GetChecked()
@@ -254,8 +300,9 @@ local otherGuildColorLabel, otherGuildColorSwatch, otherGuildColorTexture = Crea
 -- Right Column - Information Display Options
 -- Show Player Status checkbox (Row 1, Right Column)
 local playerStatusCheckbox = CreateFrame("CheckButton", "MidnightTooltipPlayerStatus", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-playerStatusCheckbox:SetPoint("TOPLEFT", cursorAnchorCheckbox, "TOPRIGHT", COLUMN_OFFSET, 0)
+playerStatusCheckbox:SetPoint("TOPLEFT", rightSection, "TOPLEFT", 16, -20)
 playerStatusCheckbox.Text:SetText("Show player status (AFK/DND)")
+ConfigureCheckboxText(playerStatusCheckbox)
 playerStatusCheckbox.tooltipText = "When enabled, shows AFK and DND status on player names"
 playerStatusCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showPlayerStatus = self:GetChecked()
@@ -265,6 +312,7 @@ end)
 local iLevelCheckbox = CreateFrame("CheckButton", "MidnightTooltipItemLevel", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 iLevelCheckbox:SetPoint("TOPLEFT", playerStatusCheckbox, "BOTTOMLEFT", 0, -8)
 iLevelCheckbox.Text:SetText("Show player item level")
+ConfigureCheckboxText(iLevelCheckbox)
 iLevelCheckbox.tooltipText = "When enabled, shows the player's average item level"
 iLevelCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showItemLevel = self:GetChecked()
@@ -274,6 +322,7 @@ end)
 local roleIconCheckbox = CreateFrame("CheckButton", "MidnightTooltipRoleIcon", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 roleIconCheckbox:SetPoint("TOPLEFT", iLevelCheckbox, "BOTTOMLEFT", 0, -8)
 roleIconCheckbox.Text:SetText("Show role icon (Tank/Healer/DPS)")
+ConfigureCheckboxText(roleIconCheckbox)
 roleIconCheckbox.tooltipText = "When enabled, shows the player's role icon"
 roleIconCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showRoleIcon = self:GetChecked()
@@ -283,6 +332,7 @@ end)
 local mythicRatingCheckbox = CreateFrame("CheckButton", "MidnightTooltipMythicRating", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 mythicRatingCheckbox:SetPoint("TOPLEFT", roleIconCheckbox, "BOTTOMLEFT", 0, -8)
 mythicRatingCheckbox.Text:SetText("Show Mythic+ rating")
+ConfigureCheckboxText(mythicRatingCheckbox)
 mythicRatingCheckbox.tooltipText = "When enabled, shows the player's Mythic+ rating score"
 mythicRatingCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showMythicRating = self:GetChecked()
@@ -292,6 +342,7 @@ end)
 local factionCheckbox = CreateFrame("CheckButton", "MidnightTooltipFaction", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 factionCheckbox:SetPoint("TOPLEFT", mythicRatingCheckbox, "BOTTOMLEFT", 0, -8)
 factionCheckbox.Text:SetText("Show faction (Horde/Alliance)")
+ConfigureCheckboxText(factionCheckbox)
 factionCheckbox.tooltipText = "When enabled, the faction line will show red for Horde and blue for Alliance"
 factionCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showFaction = self:GetChecked()
@@ -301,6 +352,7 @@ end)
 local mountInfoCheckbox = CreateFrame("CheckButton", "MidnightTooltipMountInfo", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 mountInfoCheckbox:SetPoint("TOPLEFT", factionCheckbox, "BOTTOMLEFT", 0, -8)
 mountInfoCheckbox.Text:SetText("Show mount information")
+ConfigureCheckboxText(mountInfoCheckbox)
 mountInfoCheckbox.tooltipText = "When enabled, shows what mount a player is riding and collection status"
 mountInfoCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showMountInfo = self:GetChecked()
@@ -310,6 +362,7 @@ end)
 local targetOfTargetCheckbox = CreateFrame("CheckButton", "MidnightTooltipTargetOfTarget", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 targetOfTargetCheckbox:SetPoint("TOPLEFT", mountInfoCheckbox, "BOTTOMLEFT", 0, -8)
 targetOfTargetCheckbox.Text:SetText("Show target of target")
+ConfigureCheckboxText(targetOfTargetCheckbox)
 targetOfTargetCheckbox.tooltipText = "When enabled, shows who the unit is targeting"
 targetOfTargetCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showTargetOfTarget = self:GetChecked()
@@ -597,6 +650,7 @@ resetButton:SetScript("OnClick", function()
     -- Reset color swatches
     myGuildColorTexture:SetVertexColor(defaults.customGuildColorR, defaults.customGuildColorG, defaults.customGuildColorB)
     otherGuildColorTexture:SetVertexColor(defaults.customOtherGuildColorR, defaults.customOtherGuildColorG, defaults.customOtherGuildColorB)
+    UpdateAnchoringState()
     print("|cFF00FFFFMidnightTooltip|r: Settings reset to defaults.")
 end)
 
@@ -628,10 +682,15 @@ local conditionalDescription = conditionalPanel:CreateFontString(nil, "ARTWORK",
 conditionalDescription:SetPoint("TOPLEFT", conditionalTitle, "BOTTOMLEFT", 0, -8)
 conditionalDescription:SetText("Choose when MidnightTooltip should use Blizzard's default tooltip position instead of cursor anchoring.")
 conditionalDescription:SetJustifyH("LEFT")
+conditionalDescription:SetWidth(620)
+conditionalDescription:SetWordWrap(true)
+
+local conditionalSection = CreateSectionFrame(conditionalPanel, { "TOPLEFT", conditionalDescription, "BOTTOMLEFT", -12, -10 }, 640, 320)
 
 local defaultCombatCheckbox = CreateFrame("CheckButton", "MidnightTooltipDefaultInCombat", conditionalPanel, "InterfaceOptionsCheckButtonTemplate")
-defaultCombatCheckbox:SetPoint("TOPLEFT", conditionalDescription, "BOTTOMLEFT", 0, -16)
+defaultCombatCheckbox:SetPoint("TOPLEFT", conditionalSection, "TOPLEFT", 16, -20)
 defaultCombatCheckbox.Text:SetText("Use default tooltip position while in combat")
+ConfigureCheckboxText(defaultCombatCheckbox, 560)
 defaultCombatCheckbox.tooltipText = "When enabled, all tooltips use Blizzard's default position during combat."
 defaultCombatCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.defaultInCombat = self:GetChecked()
@@ -643,6 +702,7 @@ end)
 local defaultInstancesCheckbox = CreateFrame("CheckButton", "MidnightTooltipDefaultInInstances", conditionalPanel, "InterfaceOptionsCheckButtonTemplate")
 defaultInstancesCheckbox:SetPoint("TOPLEFT", defaultCombatCheckbox, "BOTTOMLEFT", 0, -8)
 defaultInstancesCheckbox.Text:SetText("Use default tooltip position in dungeons/raids/scenarios")
+ConfigureCheckboxText(defaultInstancesCheckbox, 560)
 defaultInstancesCheckbox.tooltipText = "When enabled, all tooltips use Blizzard's default position in dungeons, raids, and scenarios."
 defaultInstancesCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.defaultInInstances = self:GetChecked()
@@ -668,6 +728,8 @@ end
 local worldLabel = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 worldLabel:SetPoint("TOPLEFT", defaultInstancesCheckbox, "BOTTOMLEFT", 0, -20)
 worldLabel:SetText("WorldFrame tooltips (units in the world):")
+worldLabel:SetWidth(560)
+worldLabel:SetJustifyH("LEFT")
 
 local worldDropdown = CreateFrame("Frame", "MidnightTooltipWorldTooltipModeDropdown", conditionalPanel, "UIDropDownMenuTemplate")
 worldDropdown:SetPoint("TOPLEFT", worldLabel, "BOTTOMLEFT", -15, -4)
@@ -697,6 +759,8 @@ UIDropDownMenu_Initialize(worldDropdown, WorldDropdown_Initialize)
 local uiLabel = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 uiLabel:SetPoint("TOPLEFT", worldDropdown, "BOTTOMLEFT", 16, -10)
 uiLabel:SetText("UnitFrame/UI tooltips (action bars, inventory, unit frames):")
+uiLabel:SetWidth(560)
+uiLabel:SetJustifyH("LEFT")
 
 local uiDropdown = CreateFrame("Frame", "MidnightTooltipUITooltipModeDropdown", conditionalPanel, "UIDropDownMenuTemplate")
 uiDropdown:SetPoint("TOPLEFT", uiLabel, "BOTTOMLEFT", -15, -4)
@@ -726,6 +790,8 @@ UIDropDownMenu_Initialize(uiDropdown, UIDropdown_Initialize)
 local useCasesText = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 useCasesText:SetPoint("TOPLEFT", uiDropdown, "BOTTOMLEFT", 16, -16)
 useCasesText:SetJustifyH("LEFT")
+useCasesText:SetWidth(560)
+useCasesText:SetWordWrap(true)
 useCasesText:SetText(
     "Use cases:\n"
     .. "• WorldFrame: Default + UI: Mouseover -> stable nameplate/unit tooltip placement, while bags/action bars still follow cursor.\n"
@@ -735,11 +801,49 @@ useCasesText:SetText(
     .. "• In combat/in dungeons/raids options override both dropdowns and force default positioning while active."
 )
 
+
+local function SetDropdownFrameEnabled(dropdown, enabled)
+    if not dropdown then return end
+    local level = _G[dropdown:GetName() .. "Text"]
+    if level then
+        level:SetTextColor(enabled and 1 or 0.5, enabled and 0.82 or 0.5, enabled and 0 or 0.5)
+    end
+    local button = _G[dropdown:GetName() .. "Button"]
+    if button then
+        if enabled then button:Enable() else button:Disable() end
+    end
+    dropdown:SetAlpha(enabled and 1 or 0.6)
+end
+
+UpdateAnchoringState = function()
+    local anchoringEnabled = MidnightTooltipDB.enableCursorAnchor
+
+    if not anchoringEnabled then
+        MidnightTooltipDB.cursorOnlyMode = false
+    end
+
+    cursorOnlyModeCheckbox:SetEnabled(anchoringEnabled)
+    cursorOnlyModeCheckbox:SetChecked(anchoringEnabled and MidnightTooltipDB.cursorOnlyMode or false)
+    cursorOnlyModeCheckbox.Text:SetTextColor(anchoringEnabled and 1 or 0.5, anchoringEnabled and 0.82 or 0.5, anchoringEnabled and 0 or 0.5)
+
+    defaultCombatCheckbox:SetEnabled(anchoringEnabled)
+    defaultInstancesCheckbox:SetEnabled(anchoringEnabled)
+    defaultCombatCheckbox.Text:SetTextColor(anchoringEnabled and 1 or 0.5, anchoringEnabled and 0.82 or 0.5, anchoringEnabled and 0 or 0.5)
+    defaultInstancesCheckbox.Text:SetTextColor(anchoringEnabled and 1 or 0.5, anchoringEnabled and 0.82 or 0.5, anchoringEnabled and 0 or 0.5)
+
+    worldLabel:SetTextColor(anchoringEnabled and 1 or 0.5, anchoringEnabled and 0.82 or 0.5, anchoringEnabled and 0 or 0.5)
+    uiLabel:SetTextColor(anchoringEnabled and 1 or 0.5, anchoringEnabled and 0.82 or 0.5, anchoringEnabled and 0 or 0.5)
+
+    SetDropdownFrameEnabled(worldDropdown, anchoringEnabled)
+    SetDropdownFrameEnabled(uiDropdown, anchoringEnabled)
+end
+
 conditionalPanel:SetScript("OnShow", function()
     defaultCombatCheckbox:SetChecked(MidnightTooltipDB.defaultInCombat)
     defaultInstancesCheckbox:SetChecked(MidnightTooltipDB.defaultInInstances)
     UIDropDownMenu_SetText(worldDropdown, GetPositionModeText(MidnightTooltipDB.worldTooltipPositionMode or "mouseover"))
     UIDropDownMenu_SetText(uiDropdown, GetPositionModeText(MidnightTooltipDB.uiTooltipPositionMode or "mouseover"))
+    UpdateAnchoringState()
 end)
 
 -- Create Profiles Panel
@@ -1007,6 +1111,7 @@ RefreshUI = function()
     offsetYSlider:SetValue(MidnightTooltipDB.cursorOffsetY)
     fadeOutSlider:SetValue(MidnightTooltipDB.fadeOutDelay or 0.2)
     scaleSlider:SetValue(MidnightTooltipDB.tooltipScale or 100)
+    UpdateAnchoringState()
     -- Refresh color swatches
     myGuildColorTexture:SetVertexColor(
         MidnightTooltipDB.customGuildColorR or 1.0,
