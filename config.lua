@@ -19,6 +19,10 @@ local defaults = {
     cursorOnlyMode = false,
     hideTooltipsInCombat = false,
     enableQualityBorder = true,
+    defaultInCombat = false,
+    defaultInInstances = false,
+    worldTooltipPositionMode = "mouseover",
+    uiTooltipPositionMode = "mouseover",
     anchorPoint = "BOTTOM",
     cursorOffsetX = 0,
     cursorOffsetY = 0,
@@ -607,7 +611,136 @@ local category
 if Settings and Settings.RegisterCanvasLayoutCategory then
     category = Settings.RegisterCanvasLayoutCategory(optionsPanel, optionsPanel.name)
     Settings.RegisterAddOnCategory(category)
+
 end
+
+
+-- Create Conditional Tooltip Positions Panel
+local conditionalPanel = CreateFrame("Frame", "MidnightTooltipConditionalOptionsPanel", UIParent)
+conditionalPanel.name = "Conditional tooltip positions"
+conditionalPanel.parent = "MidnightTooltip"
+
+local conditionalTitle = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+conditionalTitle:SetPoint("TOPLEFT", 16, -16)
+conditionalTitle:SetText("Conditional tooltip positions")
+
+local conditionalDescription = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+conditionalDescription:SetPoint("TOPLEFT", conditionalTitle, "BOTTOMLEFT", 0, -8)
+conditionalDescription:SetText("Choose when MidnightTooltip should use Blizzard's default tooltip position instead of cursor anchoring.")
+conditionalDescription:SetJustifyH("LEFT")
+
+local defaultCombatCheckbox = CreateFrame("CheckButton", "MidnightTooltipDefaultInCombat", conditionalPanel, "InterfaceOptionsCheckButtonTemplate")
+defaultCombatCheckbox:SetPoint("TOPLEFT", conditionalDescription, "BOTTOMLEFT", 0, -16)
+defaultCombatCheckbox.Text:SetText("Use default tooltip position while in combat")
+defaultCombatCheckbox.tooltipText = "When enabled, all tooltips use Blizzard's default position during combat."
+defaultCombatCheckbox:SetScript("OnClick", function(self)
+    MidnightTooltipDB.defaultInCombat = self:GetChecked()
+    if addon and addon.RefreshSettingsCache then
+        addon.RefreshSettingsCache()
+    end
+end)
+
+local defaultInstancesCheckbox = CreateFrame("CheckButton", "MidnightTooltipDefaultInInstances", conditionalPanel, "InterfaceOptionsCheckButtonTemplate")
+defaultInstancesCheckbox:SetPoint("TOPLEFT", defaultCombatCheckbox, "BOTTOMLEFT", 0, -8)
+defaultInstancesCheckbox.Text:SetText("Use default tooltip position in dungeons/raids/scenarios")
+defaultInstancesCheckbox.tooltipText = "When enabled, all tooltips use Blizzard's default position in dungeons, raids, and scenarios."
+defaultInstancesCheckbox:SetScript("OnClick", function(self)
+    MidnightTooltipDB.defaultInInstances = self:GetChecked()
+    if addon and addon.RefreshSettingsCache then
+        addon.RefreshSettingsCache()
+    end
+end)
+
+local positionModes = {
+    { text = "Mouseover (cursor anchor)", value = "mouseover" },
+    { text = "Default (UI Edit Mode position)", value = "default" },
+}
+
+local function GetPositionModeText(value)
+    for _, mode in ipairs(positionModes) do
+        if mode.value == value then
+            return mode.text
+        end
+    end
+    return positionModes[1].text
+end
+
+local worldLabel = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+worldLabel:SetPoint("TOPLEFT", defaultInstancesCheckbox, "BOTTOMLEFT", 0, -20)
+worldLabel:SetText("WorldFrame tooltips (units in the world):")
+
+local worldDropdown = CreateFrame("Frame", "MidnightTooltipWorldTooltipModeDropdown", conditionalPanel, "UIDropDownMenuTemplate")
+worldDropdown:SetPoint("TOPLEFT", worldLabel, "BOTTOMLEFT", -15, -4)
+UIDropDownMenu_SetWidth(worldDropdown, 220)
+
+local function WorldDropdown_OnClick(self)
+    MidnightTooltipDB.worldTooltipPositionMode = self.value
+    UIDropDownMenu_SetText(worldDropdown, self:GetText())
+    CloseDropDownMenus()
+    if addon and addon.RefreshSettingsCache then
+        addon.RefreshSettingsCache()
+    end
+end
+
+local function WorldDropdown_Initialize(self)
+    local info = UIDropDownMenu_CreateInfo()
+    for _, mode in ipairs(positionModes) do
+        info.text = mode.text
+        info.value = mode.value
+        info.func = WorldDropdown_OnClick
+        info.checked = (MidnightTooltipDB.worldTooltipPositionMode == mode.value)
+        UIDropDownMenu_AddButton(info)
+    end
+end
+UIDropDownMenu_Initialize(worldDropdown, WorldDropdown_Initialize)
+
+local uiLabel = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+uiLabel:SetPoint("TOPLEFT", worldDropdown, "BOTTOMLEFT", 16, -10)
+uiLabel:SetText("UnitFrame/UI tooltips (action bars, inventory, unit frames):")
+
+local uiDropdown = CreateFrame("Frame", "MidnightTooltipUITooltipModeDropdown", conditionalPanel, "UIDropDownMenuTemplate")
+uiDropdown:SetPoint("TOPLEFT", uiLabel, "BOTTOMLEFT", -15, -4)
+UIDropDownMenu_SetWidth(uiDropdown, 220)
+
+local function UIDropdown_OnClick(self)
+    MidnightTooltipDB.uiTooltipPositionMode = self.value
+    UIDropDownMenu_SetText(uiDropdown, self:GetText())
+    CloseDropDownMenus()
+    if addon and addon.RefreshSettingsCache then
+        addon.RefreshSettingsCache()
+    end
+end
+
+local function UIDropdown_Initialize(self)
+    local info = UIDropDownMenu_CreateInfo()
+    for _, mode in ipairs(positionModes) do
+        info.text = mode.text
+        info.value = mode.value
+        info.func = UIDropdown_OnClick
+        info.checked = (MidnightTooltipDB.uiTooltipPositionMode == mode.value)
+        UIDropDownMenu_AddButton(info)
+    end
+end
+UIDropDownMenu_Initialize(uiDropdown, UIDropdown_Initialize)
+
+local useCasesText = conditionalPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+useCasesText:SetPoint("TOPLEFT", uiDropdown, "BOTTOMLEFT", 16, -16)
+useCasesText:SetJustifyH("LEFT")
+useCasesText:SetText(
+    "Use cases:\n"
+    .. "• WorldFrame: Default + UI: Mouseover -> stable nameplate/unit tooltip placement, while bags/action bars still follow cursor.\n"
+    .. "• WorldFrame: Mouseover + UI: Default -> world unit tooltips follow cursor, while inventory/action bars stay at your Blizzard anchor.\n"
+    .. "• Both Mouseover -> classic MidnightTooltip behavior everywhere.\n"
+    .. "• Both Default -> keep MidnightTooltip visual features but let Blizzard handle all positioning.\n"
+    .. "• In combat/in dungeons/raids options override both dropdowns and force default positioning while active."
+)
+
+conditionalPanel:SetScript("OnShow", function()
+    defaultCombatCheckbox:SetChecked(MidnightTooltipDB.defaultInCombat)
+    defaultInstancesCheckbox:SetChecked(MidnightTooltipDB.defaultInInstances)
+    UIDropDownMenu_SetText(worldDropdown, GetPositionModeText(MidnightTooltipDB.worldTooltipPositionMode or "mouseover"))
+    UIDropDownMenu_SetText(uiDropdown, GetPositionModeText(MidnightTooltipDB.uiTooltipPositionMode or "mouseover"))
+end)
 
 -- Create Profiles Panel
 local profilesPanel = CreateFrame("Frame", "MidnightTooltipProfilesPanel", UIParent)
@@ -850,7 +983,8 @@ end)
 
 -- Register profiles panel
 if Settings and Settings.RegisterCanvasLayoutSubcategory then
-    local profileCategory = Settings.RegisterCanvasLayoutSubcategory(category, profilesPanel, profilesPanel.name)
+    Settings.RegisterCanvasLayoutSubcategory(category, conditionalPanel, conditionalPanel.name)
+    Settings.RegisterCanvasLayoutSubcategory(category, profilesPanel, profilesPanel.name)
 end
 
 -- Function to refresh UI with current values
