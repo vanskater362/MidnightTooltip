@@ -169,7 +169,11 @@ end
 
 local function CreateSectionFrame(parent, anchorTo, width, height)
     local section = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    section:SetPoint("TOPLEFT", anchorTo)
+    if type(anchorTo) == "table" then
+        section:SetPoint(unpack(anchorTo))
+    else
+        section:SetPoint("TOPLEFT", anchorTo)
+    end
     section:SetSize(width, height)
     section:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
