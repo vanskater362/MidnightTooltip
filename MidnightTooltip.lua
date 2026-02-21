@@ -171,7 +171,39 @@ local function IsWorldMapTooltip()
 end
 
 local function IsWorldTooltipOwner(owner)
-    return owner and owner == WorldFrame
+    if not owner then
+        return false
+    end
+
+    if owner == WorldFrame then
+        return true
+    end
+
+    if owner.GetName then
+        local success, ownerName = pcall(owner.GetName, owner)
+        if success and ownerName and strfind(ownerName, "^NamePlate") then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function IsWorldTooltip(tooltip)
+    if not tooltip then
+        return false
+    end
+
+    if IsWorldTooltipOwner(tooltip:GetOwner()) then
+        return true
+    end
+
+    local success, _, unitToken = pcall(tooltip.GetUnit, tooltip)
+    if success and unitToken and strfind(unitToken, "^nameplate") then
+        return true
+    end
+
+    return false
 end
 
 local function ShouldUseDefaultPosition(tooltip)
@@ -187,8 +219,7 @@ local function ShouldUseDefaultPosition(tooltip)
         return true
     end
 
-    local owner = tooltip:GetOwner()
-    if IsWorldTooltipOwner(owner) then
+    if IsWorldTooltip(tooltip) then
         return settingsCache.worldTooltipPositionMode == "default"
     end
 
