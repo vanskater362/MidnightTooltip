@@ -198,11 +198,6 @@ local function IsWorldTooltip(tooltip)
         return true
     end
 
-    local success, _, unitToken = pcall(tooltip.GetUnit, tooltip)
-    if success and unitToken and strfind(unitToken, "^nameplate") then
-        return true
-    end
-
     return false
 end
 

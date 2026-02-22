@@ -98,6 +98,15 @@ local function ApplyProfileToActiveSettings(profileName)
     return true
 end
 
+local function SetActiveSetting(key, value)
+    MidnightTooltipDB[key] = value
+
+    local currentProfile = MidnightTooltipDB.currentProfile
+    if currentProfile and MidnightTooltipProfiles[currentProfile] then
+        MidnightTooltipProfiles[currentProfile][key] = value
+    end
+end
+
 -- Create event frame to initialize after saved variables are loaded
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
@@ -747,7 +756,7 @@ defaultCombatCheckbox.Text:SetText("Use default tooltip position while in combat
 ConfigureCheckboxText(defaultCombatCheckbox, 560)
 defaultCombatCheckbox.tooltipText = "When enabled, all tooltips use Blizzard's default position during combat."
 defaultCombatCheckbox:SetScript("OnClick", function(self)
-    MidnightTooltipDB.defaultInCombat = self:GetChecked()
+    SetActiveSetting("defaultInCombat", self:GetChecked())
     if addon and addon.RefreshSettingsCache then
         addon.RefreshSettingsCache()
     end
@@ -759,7 +768,7 @@ defaultInstancesCheckbox.Text:SetText("Use default tooltip position in dungeons/
 ConfigureCheckboxText(defaultInstancesCheckbox, 560)
 defaultInstancesCheckbox.tooltipText = "When enabled, all tooltips use Blizzard's default position in dungeons, raids, and scenarios."
 defaultInstancesCheckbox:SetScript("OnClick", function(self)
-    MidnightTooltipDB.defaultInInstances = self:GetChecked()
+    SetActiveSetting("defaultInInstances", self:GetChecked())
     if addon and addon.RefreshSettingsCache then
         addon.RefreshSettingsCache()
     end
@@ -801,7 +810,7 @@ worldDropdown:SetPoint("TOPLEFT", worldLabel, "BOTTOMLEFT", -15, -4)
 UIDropDownMenu_SetWidth(worldDropdown, 220)
 
 local function WorldDropdown_OnClick(self)
-    MidnightTooltipDB.worldTooltipPositionMode = self.value
+    SetActiveSetting("worldTooltipPositionMode", NormalizePositionMode(self.value))
     UIDropDownMenu_SetText(worldDropdown, self:GetText())
     CloseDropDownMenus()
     if addon and addon.RefreshSettingsCache then
@@ -835,7 +844,7 @@ uiDropdown:SetPoint("TOPLEFT", uiLabel, "BOTTOMLEFT", -15, -4)
 UIDropDownMenu_SetWidth(uiDropdown, 220)
 
 local function UIDropdown_OnClick(self)
-    MidnightTooltipDB.uiTooltipPositionMode = self.value
+    SetActiveSetting("uiTooltipPositionMode", NormalizePositionMode(self.value))
     UIDropDownMenu_SetText(uiDropdown, self:GetText())
     CloseDropDownMenus()
     if addon and addon.RefreshSettingsCache then
@@ -896,8 +905,8 @@ UpdateAnchoringState = function()
 end
 
 conditionalPanel:SetScript("OnShow", function()
-    MidnightTooltipDB.worldTooltipPositionMode = NormalizePositionMode(MidnightTooltipDB.worldTooltipPositionMode)
-    MidnightTooltipDB.uiTooltipPositionMode = NormalizePositionMode(MidnightTooltipDB.uiTooltipPositionMode)
+    SetActiveSetting("worldTooltipPositionMode", NormalizePositionMode(MidnightTooltipDB.worldTooltipPositionMode))
+    SetActiveSetting("uiTooltipPositionMode", NormalizePositionMode(MidnightTooltipDB.uiTooltipPositionMode))
     defaultCombatCheckbox:SetChecked(MidnightTooltipDB.defaultInCombat)
     defaultInstancesCheckbox:SetChecked(MidnightTooltipDB.defaultInInstances)
     UIDropDownMenu_SetText(worldDropdown, GetPositionModeText(MidnightTooltipDB.worldTooltipPositionMode))
