@@ -347,7 +347,7 @@ local otherGuildColorLabel, otherGuildColorSwatch, otherGuildColorTexture = Crea
 )
 
 myGuildColorLabel:ClearAllPoints()
-myGuildColorLabel:SetPoint("TOPLEFT", guildColorsCheckbox, "BOTTOMLEFT", 0, -42)
+myGuildColorLabel:SetPoint("TOPLEFT", guildColorsCheckbox, "BOTTOMLEFT", 0, -60)
 
 -- Right Column - Information Display Options
 -- Show Player Status checkbox (Row 1, Right Column)
