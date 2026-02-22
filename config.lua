@@ -347,7 +347,7 @@ local otherGuildColorLabel, otherGuildColorSwatch, otherGuildColorTexture = Crea
 )
 
 myGuildColorLabel:ClearAllPoints()
-myGuildColorLabel:SetPoint("TOPLEFT", guildColorsCheckbox, "BOTTOMLEFT", 0, -18)
+myGuildColorLabel:SetPoint("TOPLEFT", guildColorsCheckbox, "BOTTOMLEFT", 0, -42)
 
 -- Right Column - Information Display Options
 -- Show Player Status checkbox (Row 1, Right Column)
@@ -770,6 +770,15 @@ local positionModes = {
     { text = "Default (UI Edit Mode position)", value = "default" },
 }
 
+local function NormalizePositionMode(value)
+    for _, mode in ipairs(positionModes) do
+        if mode.value == value then
+            return mode.value
+        end
+    end
+    return positionModes[1].value
+end
+
 local function GetPositionModeText(value)
     for _, mode in ipairs(positionModes) do
         if mode.value == value then
@@ -802,11 +811,12 @@ end
 
 local function WorldDropdown_Initialize(self)
     local info = UIDropDownMenu_CreateInfo()
+    local selectedMode = NormalizePositionMode(MidnightTooltipDB.worldTooltipPositionMode)
     for _, mode in ipairs(positionModes) do
         info.text = mode.text
         info.value = mode.value
         info.func = WorldDropdown_OnClick
-        info.checked = (MidnightTooltipDB.worldTooltipPositionMode == mode.value)
+        info.checked = (selectedMode == mode.value)
         UIDropDownMenu_AddButton(info)
     end
 end
@@ -835,11 +845,12 @@ end
 
 local function UIDropdown_Initialize(self)
     local info = UIDropDownMenu_CreateInfo()
+    local selectedMode = NormalizePositionMode(MidnightTooltipDB.uiTooltipPositionMode)
     for _, mode in ipairs(positionModes) do
         info.text = mode.text
         info.value = mode.value
         info.func = UIDropdown_OnClick
-        info.checked = (MidnightTooltipDB.uiTooltipPositionMode == mode.value)
+        info.checked = (selectedMode == mode.value)
         UIDropDownMenu_AddButton(info)
     end
 end
@@ -885,10 +896,12 @@ UpdateAnchoringState = function()
 end
 
 conditionalPanel:SetScript("OnShow", function()
+    MidnightTooltipDB.worldTooltipPositionMode = NormalizePositionMode(MidnightTooltipDB.worldTooltipPositionMode)
+    MidnightTooltipDB.uiTooltipPositionMode = NormalizePositionMode(MidnightTooltipDB.uiTooltipPositionMode)
     defaultCombatCheckbox:SetChecked(MidnightTooltipDB.defaultInCombat)
     defaultInstancesCheckbox:SetChecked(MidnightTooltipDB.defaultInInstances)
-    UIDropDownMenu_SetText(worldDropdown, GetPositionModeText(MidnightTooltipDB.worldTooltipPositionMode or "mouseover"))
-    UIDropDownMenu_SetText(uiDropdown, GetPositionModeText(MidnightTooltipDB.uiTooltipPositionMode or "mouseover"))
+    UIDropDownMenu_SetText(worldDropdown, GetPositionModeText(MidnightTooltipDB.worldTooltipPositionMode))
+    UIDropDownMenu_SetText(uiDropdown, GetPositionModeText(MidnightTooltipDB.uiTooltipPositionMode))
     UpdateAnchoringState()
 end)
 
