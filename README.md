@@ -25,6 +25,7 @@ MidnightTooltip is a World of Warcraft addon that provides cursor-following tool
 - **Quality border colors** - Colors tooltip borders based on item quality (including upgraded items)
 - **Shopping tooltip positioning** - Intelligently positions comparison tooltips with secret value protection
 - **World map compatibility** - Shopping tooltips work correctly with world quest rewards
+- **Conditional tooltip positions** - Optional default-position overrides for combat, instances, and tooltip source type (WorldFrame vs UI frames)
 
 ### Combat & Instances
 - **Hide tooltips in combat** - Option to hide tooltips during combat in dungeons/raids
@@ -78,6 +79,14 @@ Access the options through the in-game Interface Options menu or by typing `/mtt
 - Hide tooltips in combat during dungeons/raids
 - Enable quality borders
 
+**Conditional tooltip positions (submenu):**
+- Force default Blizzard tooltip position while in combat
+- Force default Blizzard tooltip position in dungeons/raids/scenarios
+- Pick position mode per source:
+  - WorldFrame tooltips (units in the world)
+  - UnitFrame/UI tooltips (action bars, inventory, unit frames)
+- Includes built-in use-case guidance for each mode combination
+
 **Player Information:**
 - Toggle class colorswith custom color pickers for:
   - Your guild members (default: magenta)
@@ -110,6 +119,10 @@ enableCursorAnchor = true
 cursorOnlyMode = false
 hideTooltipsInCombat = false
 enableQualityBorder = true
+defaultInCombat = false
+defaultInInstances = false
+worldTooltipPositionMode = "mouseover"
+uiTooltipPositionMode = "mouseover"
 anchorPoint = "BOTTOM"
 cursorOffsetX = 0
 cursorOffsetY = 0

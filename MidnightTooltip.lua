@@ -37,6 +37,10 @@ local function RefreshSettingsCache()
     settingsCache.cursorOnlyMode = getSetting("cursorOnlyMode", false)
     settingsCache.hideTooltipsInCombat = getSetting("hideTooltipsInCombat", false)
     settingsCache.enableQualityBorder = getSetting("enableQualityBorder", true)
+    settingsCache.defaultInCombat = getSetting("defaultInCombat", false)
+    settingsCache.defaultInInstances = getSetting("defaultInInstances", false)
+    settingsCache.worldTooltipPositionMode = getSetting("worldTooltipPositionMode", "mouseover")
+    settingsCache.uiTooltipPositionMode = getSetting("uiTooltipPositionMode", "mouseover")
     settingsCache.anchorPoint = getSetting("anchorPoint", "BOTTOM")
     settingsCache.cursorOffsetX = getSetting("cursorOffsetX", 0)
     settingsCache.cursorOffsetY = getSetting("cursorOffsetY", 0)
@@ -164,6 +168,57 @@ end
 -- Helper function to check if tooltip is for a WorldMap element
 local function IsWorldMapTooltip()
     return WorldMapFrame and WorldMapFrame:IsShown()
+end
+
+local function IsWorldTooltipOwner(owner)
+    if not owner then
+        return false
+    end
+
+    if owner == WorldFrame then
+        return true
+    end
+
+    if owner.GetName then
+        local success, ownerName = pcall(owner.GetName, owner)
+        if success and ownerName and strfind(ownerName, "^NamePlate") then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function IsWorldTooltip(tooltip)
+    if not tooltip then
+        return false
+    end
+
+    if IsWorldTooltipOwner(tooltip:GetOwner()) then
+        return true
+    end
+
+    return false
+end
+
+local function ShouldUseDefaultPosition(tooltip)
+    if not settingsCache.enableCursorAnchor then
+        return true
+    end
+
+    if settingsCache.defaultInCombat and InCombatLockdown() then
+        return true
+    end
+
+    if settingsCache.defaultInInstances and isInRestrictedInstance then
+        return true
+    end
+
+    if IsWorldTooltip(tooltip) then
+        return settingsCache.worldTooltipPositionMode == "default"
+    end
+
+    return settingsCache.uiTooltipPositionMode == "default"
 end
 
 -- Inspect throttling to avoid hitting rate limits
@@ -774,8 +829,8 @@ function MidnightTooltip:OnInitialize()
             end
         end
         
-        -- Position at cursor
-        if settingsCache.enableCursorAnchor then
+        -- Position at cursor when no default-position rule applies
+        if not ShouldUseDefaultPosition(self) then
             local x, y = GetCursorPosition()
             local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
             local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
@@ -865,7 +920,7 @@ function MidnightTooltip:OnInitialize()
         end
         
         -- Reposition tooltip to cursor for smooth tracking (skip for special frames)
-        if not isSpecialFrame and settingsCache.enableCursorAnchor and self:IsShown() then
+        if not isSpecialFrame and self:IsShown() and not ShouldUseDefaultPosition(self) then
             local x, y = GetCursorPosition()
             local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
             local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
