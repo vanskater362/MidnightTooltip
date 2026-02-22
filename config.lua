@@ -827,9 +827,15 @@ local worldDropdown = CreateFrame("Frame", "MidnightTooltipWorldTooltipModeDropd
 worldDropdown:SetPoint("TOPLEFT", worldLabel, "BOTTOMLEFT", -15, -4)
 UIDropDownMenu_SetWidth(worldDropdown, 220)
 
+local function SetDropdownSelection(dropdown, value)
+    local normalizedValue = NormalizePositionMode(value)
+    UIDropDownMenu_SetSelectedValue(dropdown, normalizedValue)
+    UIDropDownMenu_SetText(dropdown, GetPositionModeText(normalizedValue))
+end
+
 local function WorldDropdown_OnClick(self)
     SetActiveSetting("worldTooltipPositionMode", NormalizePositionMode(self.value))
-    UIDropDownMenu_SetText(worldDropdown, self:GetText())
+    SetDropdownSelection(worldDropdown, self.value)
     CloseDropDownMenus()
     if addon and addon.RefreshSettingsCache then
         addon.RefreshSettingsCache()
@@ -840,6 +846,7 @@ local function WorldDropdown_Initialize(self)
     local info = UIDropDownMenu_CreateInfo()
     local selectedMode = NormalizePositionMode(MidnightTooltipDB.worldTooltipPositionMode)
     for _, mode in ipairs(positionModes) do
+        info = UIDropDownMenu_CreateInfo()
         info.text = mode.text
         info.value = mode.value
         info.func = WorldDropdown_OnClick
@@ -863,7 +870,7 @@ UIDropDownMenu_SetWidth(uiDropdown, 220)
 
 local function UIDropdown_OnClick(self)
     SetActiveSetting("uiTooltipPositionMode", NormalizePositionMode(self.value))
-    UIDropDownMenu_SetText(uiDropdown, self:GetText())
+    SetDropdownSelection(uiDropdown, self.value)
     CloseDropDownMenus()
     if addon and addon.RefreshSettingsCache then
         addon.RefreshSettingsCache()
@@ -874,6 +881,7 @@ local function UIDropdown_Initialize(self)
     local info = UIDropDownMenu_CreateInfo()
     local selectedMode = NormalizePositionMode(MidnightTooltipDB.uiTooltipPositionMode)
     for _, mode in ipairs(positionModes) do
+        info = UIDropDownMenu_CreateInfo()
         info.text = mode.text
         info.value = mode.value
         info.func = UIDropdown_OnClick
@@ -922,14 +930,22 @@ UpdateAnchoringState = function()
     SetDropdownFrameEnabled(uiDropdown, anchoringEnabled)
 end
 
-conditionalPanel:SetScript("OnShow", function()
+local function RefreshConditionalPanelControls()
     SetActiveSetting("worldTooltipPositionMode", NormalizePositionMode(MidnightTooltipDB.worldTooltipPositionMode))
     SetActiveSetting("uiTooltipPositionMode", NormalizePositionMode(MidnightTooltipDB.uiTooltipPositionMode))
     defaultCombatCheckbox:SetChecked(MidnightTooltipDB.defaultInCombat)
     defaultInstancesCheckbox:SetChecked(MidnightTooltipDB.defaultInInstances)
-    UIDropDownMenu_SetText(worldDropdown, GetPositionModeText(MidnightTooltipDB.worldTooltipPositionMode))
-    UIDropDownMenu_SetText(uiDropdown, GetPositionModeText(MidnightTooltipDB.uiTooltipPositionMode))
+    SetDropdownSelection(worldDropdown, MidnightTooltipDB.worldTooltipPositionMode)
+    SetDropdownSelection(uiDropdown, MidnightTooltipDB.uiTooltipPositionMode)
     UpdateAnchoringState()
+end
+
+conditionalPanel:SetScript("OnShow", function()
+    RefreshConditionalPanelControls()
+end)
+
+C_Timer.After(0, function()
+    RefreshConditionalPanelControls()
 end)
 
 -- Create Profiles Panel
