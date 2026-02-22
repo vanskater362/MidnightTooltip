@@ -46,6 +46,13 @@ local defaults = {
     customOtherGuildColorB = 0.8,
 }
 
+local conditionalProfileKeys = {
+    "defaultInCombat",
+    "defaultInInstances",
+    "worldTooltipPositionMode",
+    "uiTooltipPositionMode",
+}
+
 -- Create saved variables table (these will be properly loaded by TOC after ADDON_LOADED)
 MidnightTooltipDB = MidnightTooltipDB or {}
 MidnightTooltipProfiles = MidnightTooltipProfiles or {}
@@ -69,6 +76,17 @@ local function InitializeSettings()
     MidnightTooltipDB.currentProfile = MidnightTooltipDB.currentProfile or "Default"
     if not MidnightTooltipProfiles[MidnightTooltipDB.currentProfile] then
         MidnightTooltipDB.currentProfile = "Default"
+    end
+
+    local activeProfile = MidnightTooltipProfiles[MidnightTooltipDB.currentProfile]
+    if activeProfile then
+        for _, key in ipairs(conditionalProfileKeys) do
+            if activeProfile[key] ~= nil then
+                MidnightTooltipDB[key] = activeProfile[key]
+            else
+                activeProfile[key] = MidnightTooltipDB[key]
+            end
+        end
     end
 end
 
