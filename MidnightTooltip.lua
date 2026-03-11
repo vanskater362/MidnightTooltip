@@ -161,9 +161,24 @@ local function IsSpecialFrame(ownerName)
     return false
 end
 
--- Helper function to check if tooltip is for a WorldMap element
-local function IsWorldMapTooltip()
-    return WorldMapFrame and WorldMapFrame:IsShown()
+-- Helper function to check if tooltip owner is a WorldMap element
+-- Returns true only if the tooltip is owned by an element that is a child of WorldMapFrame
+local function IsWorldMapOwnedTooltip(owner)
+    if not owner then return false end
+    if not WorldMapFrame or not WorldMapFrame:IsShown() then return false end
+    
+    -- Check if owner is a descendant of WorldMapFrame
+    local parent = owner
+    while parent do
+        if parent == WorldMapFrame then
+            return true
+        end
+        local success, nextParent = pcall(function() return parent:GetParent() end)
+        if not success then break end
+        parent = nextParent
+    end
+    
+    return false
 end
 
 -- Inspect throttling to avoid hitting rate limits
@@ -725,23 +740,38 @@ function MidnightTooltip:OnInitialize()
     
     -- Hook OnShow to initialize tooltip state and positioning
     GameTooltip:HookScript("OnShow", function(self)
-        -- Check for special frames FIRST - skip ALL modifications for WorldMap, Character sheet, etc.
-        if IsWorldMapTooltip() then
-            -- Completely skip all modifications when WorldMap is open
-            return
-        end
-        
+        -- Check for special frames
         local owner = self:GetOwner()
+        local isWorldMapOwned = IsWorldMapOwnedTooltip(owner)
+        local isSpecial = false
+        
         if owner and owner.GetName then
             local success, ownerName = pcall(owner.GetName, owner)
             if success and ownerName and IsSpecialFrame(ownerName) then
-                -- Completely skip all modifications for special frames
-                return
+                isSpecial = true
             end
             -- Check for assisted combat buttons (Single Button Assistant)
             if IsAssistedCombatButton(owner) then
-                return
+                isSpecial = true
             end
+        end
+        
+        -- Position at cursor (skip for WorldMap-owned tooltips and other special frames)
+        -- WorldMap tooltips use default anchor, other tooltips while map is open use user's setting
+        if settingsCache.enableCursorAnchor and not isSpecial and not isWorldMapOwned then
+            local x, y = GetCursorPosition()
+            local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
+            local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
+            local offsetX = settingsCache.cursorOffsetX or 0
+            local offsetY = settingsCache.cursorOffsetY or 0
+            self:ClearAllPoints()
+            -- Divide by tooltip scale to compensate for the scaled coordinate system
+            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / cachedUIScale) + offsetX) / tooltipScale, ((y / cachedUIScale) + offsetY) / tooltipScale)
+        end
+        
+        -- Skip remaining modifications for WorldMap-owned tooltips or other special frames
+        if isWorldMapOwned or isSpecial then
+            return
         end
         
         -- Hide if configured to hide tooltips in combat during instances
@@ -772,18 +802,6 @@ function MidnightTooltip:OnInitialize()
                 lastUnitGUID = nil
                 lastUnitToken = nil
             end
-        end
-        
-        -- Position at cursor
-        if settingsCache.enableCursorAnchor then
-            local x, y = GetCursorPosition()
-            local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
-            local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
-            local offsetX = settingsCache.cursorOffsetX or 0
-            local offsetY = settingsCache.cursorOffsetY or 0
-            self:ClearAllPoints()
-            -- Divide by tooltip scale to compensate for the scaled coordinate system
-            self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / cachedUIScale) + offsetX) / tooltipScale, ((y / cachedUIScale) + offsetY) / tooltipScale)
         end
     end)
     
@@ -837,21 +855,20 @@ function MidnightTooltip:OnInitialize()
             lastCacheCleanup = 0
         end
         
-        -- Check for special frames early - skip all positioning for WorldMap, Character sheet, etc.
-        local isSpecialFrame = false
+        -- Check for special frames early
+        local isWorldMapOwned = false
+        local isOtherSpecialFrame = false
         if self:IsShown() then
-            -- Check if WorldMap is open
-            if IsWorldMapTooltip() then
-                isSpecialFrame = true
-            else
-                local owner = self:GetOwner()
-                if owner and owner.GetName then
-                    local success, ownerName = pcall(owner.GetName, owner)
-                    if success and ownerName and IsSpecialFrame(ownerName) then
-                        isSpecialFrame = true
-                    elseif IsAssistedCombatButton(owner) then
-                        isSpecialFrame = true
-                    end
+            local owner = self:GetOwner()
+            -- Check if tooltip is owned by a WorldMap element
+            if IsWorldMapOwnedTooltip(owner) then
+                isWorldMapOwned = true
+            elseif owner and owner.GetName then
+                local success, ownerName = pcall(owner.GetName, owner)
+                if success and ownerName and IsSpecialFrame(ownerName) then
+                    isOtherSpecialFrame = true
+                elseif IsAssistedCombatButton(owner) then
+                    isOtherSpecialFrame = true
                 end
             end
         end
@@ -864,8 +881,8 @@ function MidnightTooltip:OnInitialize()
             return
         end
         
-        -- Reposition tooltip to cursor for smooth tracking (skip for special frames)
-        if not isSpecialFrame and settingsCache.enableCursorAnchor and self:IsShown() then
+        -- Reposition tooltip to cursor for smooth tracking (skip for WorldMap-owned and other special frames)
+        if not isWorldMapOwned and not isOtherSpecialFrame and settingsCache.enableCursorAnchor and self:IsShown() then
             local x, y = GetCursorPosition()
             local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
             local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
@@ -874,6 +891,11 @@ function MidnightTooltip:OnInitialize()
             self:ClearAllPoints()
             -- Divide by tooltip scale to compensate for the scaled coordinate system
             self:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / cachedUIScale) + offsetX) / tooltipScale, ((y / cachedUIScale) + offsetY) / tooltipScale)
+        end
+        
+        -- Skip unit tracking and fade logic for WorldMap-owned and other special frames
+        if isWorldMapOwned or isOtherSpecialFrame then
+            return
         end
         
         -- Detect unit changes and reset fade state
