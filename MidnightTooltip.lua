@@ -36,6 +36,7 @@ local function RefreshSettingsCache()
     settingsCache.enableCursorAnchor = getSetting("enableCursorAnchor", true)
     settingsCache.cursorOnlyMode = getSetting("cursorOnlyMode", false)
     settingsCache.hideTooltipsInCombat = getSetting("hideTooltipsInCombat", false)
+    settingsCache.combatModifierKey = getSetting("combatModifierKey", "shift")
     settingsCache.enableQualityBorder = getSetting("enableQualityBorder", true)
     settingsCache.anchorPoint = getSetting("anchorPoint", "BOTTOM")
     settingsCache.cursorOffsetX = getSetting("cursorOffsetX", 0)
@@ -51,6 +52,7 @@ local function RefreshSettingsCache()
     settingsCache.showRoleIcon = getSetting("showRoleIcon", true)
     settingsCache.showMythicRating = getSetting("showMythicRating", true)
     settingsCache.showTargetOfTarget = getSetting("showTargetOfTarget", true)
+    settingsCache.showPlayerLocation = getSetting("showPlayerLocation", true)
     -- Custom colors
     settingsCache.customGuildColorR = getSetting("customGuildColorR", 1.0)
     settingsCache.customGuildColorG = getSetting("customGuildColorG", 0.2)
@@ -469,62 +471,74 @@ local function ColorTooltipBorderByUnit(tooltip)
             end
         end
         
-        -- Get player's item level
+        -- Get player's item level (only show for level 10+, similar to TipTac)
         if settingsCache.showItemLevel then
-            local avgItemLevel
-            if unit == "player" then
-                -- For player, use GetAverageItemLevel
-                _, avgItemLevel = GetAverageItemLevel()
-            else
-                -- First check our GUID cache for previously inspected data
-                local guidSuccess, guid = pcall(UnitGUID, unit)
-                if guidSuccess and guid and inspectedIlvls[guid] then
-                    avgItemLevel = inspectedIlvls[guid]
-                end
-                
-                -- If not in cache, try inspect API (works for party/raid and current inspect target)
-                if not avgItemLevel then
-                    local inspectSuccess, inspectIlvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
-                    if inspectSuccess and inspectIlvl and inspectIlvl > 0 then
-                        avgItemLevel = inspectIlvl
+            local unitLevel = UnitLevel(unit)
+            -- Only show item level for level 10+ players (matches Blizzard's minimum)
+            if unitLevel >= 10 or unitLevel == -1 then -- -1 means boss/skull level
+                local avgItemLevel
+                if unit == "player" then
+                    -- For player, use GetAverageItemLevel
+                    _, avgItemLevel = GetAverageItemLevel()
+                else
+                    -- First check our GUID cache for previously inspected data
+                    local guidSuccess, guid = pcall(UnitGUID, unit)
+                    if guidSuccess and guid and inspectedIlvls[guid] then
+                        avgItemLevel = inspectedIlvls[guid]
                     end
-                end
-                
-                -- If inspect didn't work, parse from default tooltip (works for any nearby player)
-                if not avgItemLevel or avgItemLevel == 0 then
-                    local numLines = tooltip:NumLines()
-                    for i = 2, numLines do
-                        local lineText = _G[tooltipName .. "TextLeft" .. i]
-                        if lineText then
-                            local text = lineText:GetText()
-                            if text then
-                                -- Look for "Item Level: XXX" or localized variants
-                                local ilvl = text:match("Item Level:?%s*(%d+)") or text:match("(%d+)%s*Item Level")
-                                if ilvl then
-                                    avgItemLevel = tonumber(ilvl)
-                                    -- Hide the original line since we'll add our own
-                                    lineText:SetText("")
-                                    break
+                    
+                    -- If not in cache, try inspect API (works for party/raid and current inspect target)
+                    if not avgItemLevel then
+                        local inspectSuccess, inspectIlvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
+                        if inspectSuccess and inspectIlvl and inspectIlvl > 0 then
+                            avgItemLevel = inspectIlvl
+                            -- Cache the result
+                            if guidSuccess and guid then
+                                inspectedIlvls[guid] = inspectIlvl
+                            end
+                        end
+                    end
+                    
+                    -- If inspect didn't work, parse from default tooltip (works for any nearby player)
+                    if not avgItemLevel or avgItemLevel == 0 then
+                        local numLines = tooltip:NumLines()
+                        for i = 2, numLines do
+                            local lineText = _G[tooltipName .. "TextLeft" .. i]
+                            if lineText then
+                                local text = lineText:GetText()
+                                if text then
+                                    -- Look for "Item Level: XXX" or localized variants using ITEM_LEVEL pattern
+                                    local ilvl = text:match("Item Level:?%s*(%d+)") or text:match("(%d+)%s*Item Level")
+                                    if ilvl then
+                                        avgItemLevel = tonumber(ilvl)
+                                        -- Hide the original line since we'll add our own
+                                        lineText:SetText("")
+                                        -- Cache the result
+                                        if guidSuccess and guid then
+                                            inspectedIlvls[guid] = avgItemLevel
+                                        end
+                                        break
+                                    end
                                 end
                             end
                         end
                     end
                 end
-            end
-            
-            -- Always show item level line if enabled (for other players)
-            if unit ~= "player" then
-                if avgItemLevel and avgItemLevel > 0 then
+                
+                -- Always show item level line if enabled (for other players)
+                if unit ~= "player" then
+                    if avgItemLevel and avgItemLevel > 0 then
+                        local ilvlColor = GetItemLevelColor(avgItemLevel)
+                        tooltip:AddLine(format("|cFFFFFFFFItem Level: |r%s%d|r", ilvlColor, floor(avgItemLevel)))
+                    else
+                        -- No data available, show prompt to target
+                        tooltip:AddLine("|cFFFFFFFFItem Level: |r|cFF808080Target player to get ilvl|r")
+                    end
+                elseif avgItemLevel and avgItemLevel > 0 then
+                    -- For self, show ilvl if available
                     local ilvlColor = GetItemLevelColor(avgItemLevel)
                     tooltip:AddLine(format("|cFFFFFFFFItem Level: |r%s%d|r", ilvlColor, floor(avgItemLevel)))
-                else
-                    -- No data available, show prompt to target
-                    tooltip:AddLine("|cFFFFFFFFItem Level: |r|cFF808080Target player to get ilvl|r")
                 end
-            elseif avgItemLevel and avgItemLevel > 0 then
-                -- For self, show ilvl if available
-                local ilvlColor = GetItemLevelColor(avgItemLevel)
-                tooltip:AddLine(format("|cFFFFFFFFItem Level: |r%s%d|r", ilvlColor, floor(avgItemLevel)))
             end
         end
         
@@ -599,6 +613,46 @@ local function ColorTooltipBorderByUnit(tooltip)
                     end
                     tooltip:AddLine("|cFFFFFFFFTarget: |r" .. targetColor .. targetName .. "|r", 1, 1, 1)
                 end
+            end
+        end
+        
+        -- Show player location
+        if settingsCache.showPlayerLocation then
+            local locationText = nil
+            
+            -- For the player we're hovering over, try to get their actual location
+            if unit == "player" then
+                -- For self, use direct zone APIs
+                local zoneName = GetZoneText()
+                local subZoneName = GetSubZoneText()
+                if zoneName and zoneName ~= "" then
+                    locationText = zoneName
+                    if subZoneName and subZoneName ~= "" and subZoneName ~= zoneName then
+                        locationText = subZoneName .. ", " .. zoneName
+                    end
+                end
+            else
+                -- For other players, use C_Map API to get their location
+                -- This works for party/raid members
+                local mapID = C_Map.GetBestMapForUnit(unit)
+                if mapID then
+                    local mapInfo = C_Map.GetMapInfo(mapID)
+                    if mapInfo and mapInfo.name then
+                        locationText = mapInfo.name
+                        -- Try to get parent map for more context (zone > subzone)
+                        if mapInfo.parentMapID and mapInfo.parentMapID > 0 then
+                            local parentInfo = C_Map.GetMapInfo(mapInfo.parentMapID)
+                            if parentInfo and parentInfo.name and parentInfo.name ~= mapInfo.name then
+                                -- Only add parent if it's a different name (avoid "Stormwind, Stormwind")
+                                locationText = mapInfo.name .. ", " .. parentInfo.name
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if locationText then
+                tooltip:AddLine("|cFFFFFFFFLocation: |r|cFFFFFF80" .. locationText .. "|r", 1, 1, 1)
             end
         end
         
@@ -775,9 +829,21 @@ function MidnightTooltip:OnInitialize()
         end
         
         -- Hide if configured to hide tooltips in combat during instances
+        -- Unless the configured modifier key is being held
         if isInRestrictedInstance and settingsCache.hideTooltipsInCombat and InCombatLockdown() then
-            self:Hide()
-            return
+            local modKey = settingsCache.combatModifierKey or "shift"
+            local showTooltip = false
+            if modKey == "shift" and IsShiftKeyDown() then
+                showTooltip = true
+            elseif modKey == "ctrl" and IsControlKeyDown() then
+                showTooltip = true
+            elseif modKey == "alt" and IsAltKeyDown() then
+                showTooltip = true
+            end
+            if not showTooltip then
+                self:Hide()
+                return
+            end
         end
         
         -- Apply tooltip scale (convert percentage to decimal)
@@ -840,8 +906,42 @@ function MidnightTooltip:OnInitialize()
         end
     end)
     
-    -- NOTE: Removed GameTooltip_SetDefaultAnchor override as it causes taint in restricted instances
-    -- The OnShow hook handles positioning adequately without needing to override this global function
+    -- Hook GameTooltip_SetDefaultAnchor to position tooltip BEFORE it's shown
+    -- This prevents the "flash" where tooltip appears at default position for 1-2 frames
+    -- before OnShow repositions it to the cursor
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        -- Only handle GameTooltip
+        if tooltip ~= GameTooltip then return end
+        
+        -- Skip if cursor anchor is disabled
+        if not settingsCache.enableCursorAnchor then return end
+        
+        -- Skip in restricted instances to avoid taint
+        if isInRestrictedInstance then return end
+        
+        -- Check for special frames
+        local owner = tooltip:GetOwner()
+        if IsWorldMapOwnedTooltip(owner) then return end
+        
+        if owner and owner.GetName then
+            local success, ownerName = pcall(owner.GetName, owner)
+            if success and ownerName and IsSpecialFrame(ownerName) then
+                return
+            end
+            if IsAssistedCombatButton(owner) then
+                return
+            end
+        end
+        
+        -- Position at cursor immediately (before tooltip is shown)
+        local x, y = GetCursorPosition()
+        local tooltipScale = (settingsCache.tooltipScale and settingsCache.tooltipScale > 0) and (settingsCache.tooltipScale / 100) or 1
+        local anchorPoint = settingsCache.anchorPoint or "BOTTOM"
+        local offsetX = settingsCache.cursorOffsetX or 0
+        local offsetY = settingsCache.cursorOffsetY or 0
+        tooltip:ClearAllPoints()
+        tooltip:SetPoint(anchorPoint, UIParent, "BOTTOMLEFT", ((x / cachedUIScale) + offsetX) / tooltipScale, ((y / cachedUIScale) + offsetY) / tooltipScale)
+    end)
     
     -- Hook OnUpdate to handle cursor positioning, unit changes, fading, and cache cleanup
     GameTooltip:HookScript("OnUpdate", function(self, elapsed)
@@ -874,11 +974,23 @@ function MidnightTooltip:OnInitialize()
         end
         
         -- Hide tooltip in combat during instances if configured
+        -- Unless the configured modifier key is being held
         if isInRestrictedInstance and settingsCache.hideTooltipsInCombat and InCombatLockdown() then
-            if self:IsShown() then
-                self:Hide()
+            local modKey = settingsCache.combatModifierKey or "shift"
+            local showTooltip = false
+            if modKey == "shift" and IsShiftKeyDown() then
+                showTooltip = true
+            elseif modKey == "ctrl" and IsControlKeyDown() then
+                showTooltip = true
+            elseif modKey == "alt" and IsAltKeyDown() then
+                showTooltip = true
             end
-            return
+            if not showTooltip then
+                if self:IsShown() then
+                    self:Hide()
+                end
+                return
+            end
         end
         
         -- Reposition tooltip to cursor for smooth tracking (skip for WorldMap-owned and other special frames)

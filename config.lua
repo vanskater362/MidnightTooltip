@@ -18,6 +18,7 @@ local defaults = {
     enableCursorAnchor = true,
     cursorOnlyMode = false,
     hideTooltipsInCombat = false,
+    combatModifierKey = "shift",
     enableQualityBorder = true,
     anchorPoint = "BOTTOM",
     cursorOffsetX = 0,
@@ -33,6 +34,7 @@ local defaults = {
     showRoleIcon = true,
     showMythicRating = true,
     showTargetOfTarget = true,
+    showPlayerLocation = true,
     -- Custom colors (RGB 0-1 range)
     customGuildColorR = 1.0,
     customGuildColorG = 0.2,
@@ -159,19 +161,45 @@ end
 local optionsPanel = CreateFrame("Frame", "MidnightTooltipOptionsPanel", UIParent)
 optionsPanel.name = "MidnightTooltip"
 
+-- Create scroll frame to contain all options
+local scrollFrame = CreateFrame("ScrollFrame", "MidnightTooltipScrollFrame", optionsPanel, "UIPanelScrollFrameTemplate")
+scrollFrame:SetPoint("TOPLEFT", 8, -8)
+scrollFrame:SetPoint("BOTTOMRIGHT", -28, 28)
+
+-- Create scroll child to hold all the content
+local scrollChild = CreateFrame("Frame", "MidnightTooltipScrollChild", scrollFrame)
+scrollChild:SetSize(550, 850)  -- Width, Height (enough to contain all options)
+scrollFrame:SetScrollChild(scrollChild)
+
+-- Enable mouse wheel scrolling
+scrollFrame:EnableMouseWheel(true)
+scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+    local scrollBar = self.ScrollBar or _G[self:GetName() .. "ScrollBar"]
+    if scrollBar then
+        local current = scrollBar:GetValue()
+        local minVal, maxVal = scrollBar:GetMinMaxValues()
+        local step = 40  -- Scroll speed
+        if delta > 0 then
+            scrollBar:SetValue(math.max(minVal, current - step))
+        else
+            scrollBar:SetValue(math.min(maxVal, current + step))
+        end
+    end
+end)
+
 -- Title
-local title = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-title:SetPoint("TOPLEFT", 16, -16)
+local title = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+title:SetPoint("TOPLEFT", 8, -8)
 title:SetText("MidnightTooltip Options")
 
 -- Description
-local description = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+local description = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 description:SetText("Configure tooltip behavior and appearance")
 
 -- Left Column (5 checkboxes)
 -- Enable Cursor Anchor checkbox
-local cursorAnchorCheckbox = CreateFrame("CheckButton", "MidnightTooltipCursorAnchor", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local cursorAnchorCheckbox = CreateFrame("CheckButton", "MidnightTooltipCursorAnchor", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 cursorAnchorCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -16)
 cursorAnchorCheckbox.Text:SetText("Anchor tooltips to cursor")
 cursorAnchorCheckbox.tooltipText = "When enabled, tooltips will follow your mouse cursor"
@@ -181,7 +209,7 @@ cursorAnchorCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Cursor Only Mode checkbox
-local cursorOnlyModeCheckbox = CreateFrame("CheckButton", "MidnightTooltipCursorOnlyMode", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local cursorOnlyModeCheckbox = CreateFrame("CheckButton", "MidnightTooltipCursorOnlyMode", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 cursorOnlyModeCheckbox:SetPoint("TOPLEFT", cursorAnchorCheckbox, "BOTTOMLEFT", 0, -8)
 cursorOnlyModeCheckbox.Text:SetText("Cursor-only mode (no customizations)")
 cursorOnlyModeCheckbox.tooltipText = "When enabled, only cursor positioning is active. All other customizations are disabled."
@@ -191,18 +219,59 @@ cursorOnlyModeCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Hide Tooltips in Combat (in instances) checkbox
-local hideCombatCheckbox = CreateFrame("CheckButton", "MidnightTooltipHideCombat", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local hideCombatCheckbox = CreateFrame("CheckButton", "MidnightTooltipHideCombat", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 hideCombatCheckbox:SetPoint("TOPLEFT", cursorOnlyModeCheckbox, "BOTTOMLEFT", 0, -8)
-hideCombatCheckbox.Text:SetText("Hide tooltips in combat (dungeons/raids)")
+hideCombatCheckbox.Text:SetText("Hide tooltips in combat (instances)")
 hideCombatCheckbox.tooltipText = "When enabled, tooltips are hidden during combat in dungeons, raids, and scenarios"
 hideCombatCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.hideTooltipsInCombat = self:GetChecked()
     print("|cFF00FFFFMidnightTooltip|r: Hide combat tooltips " .. (MidnightTooltipDB.hideTooltipsInCombat and "enabled" or "disabled") .. ". Reload UI to apply changes.")
 end)
 
+-- Combat Modifier Key dropdown (show tooltips when this key is held during combat)
+local combatModLabel = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+combatModLabel:SetPoint("TOPLEFT", hideCombatCheckbox, "BOTTOMLEFT", 22, -2)
+combatModLabel:SetText("Modifier:")
+
+local combatModDropdown = CreateFrame("Frame", "MidnightTooltipCombatModDropdown", scrollChild, "UIDropDownMenuTemplate")
+combatModDropdown:SetPoint("LEFT", combatModLabel, "RIGHT", -16, -2)
+UIDropDownMenu_SetWidth(combatModDropdown, 70)
+
+local combatModKeys = {
+    {text = "Shift", value = "shift"},
+    {text = "Ctrl", value = "ctrl"},
+    {text = "Alt", value = "alt"},
+    {text = "None", value = "none"},
+}
+
+local function GetCombatModText(value)
+    for _, v in ipairs(combatModKeys) do
+        if v.value == value then return v.text end
+    end
+    return "Shift"
+end
+
+local function CombatModDropdown_Initialize(self, level)
+    for _, info in ipairs(combatModKeys) do
+        local item = UIDropDownMenu_CreateInfo()
+        item.text = info.text
+        item.value = info.value
+        item.func = function()
+            MidnightTooltipDB.combatModifierKey = info.value
+            UIDropDownMenu_SetText(combatModDropdown, info.text)
+            CloseDropDownMenus()
+        end
+        item.checked = (MidnightTooltipDB.combatModifierKey == info.value)
+        UIDropDownMenu_AddButton(item, level)
+    end
+end
+
+UIDropDownMenu_Initialize(combatModDropdown, CombatModDropdown_Initialize)
+UIDropDownMenu_SetText(combatModDropdown, GetCombatModText(MidnightTooltipDB.combatModifierKey or "shift"))
+
 -- Enable Quality Border checkbox
-local qualityBorderCheckbox = CreateFrame("CheckButton", "MidnightTooltipQualityBorder", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-qualityBorderCheckbox:SetPoint("TOPLEFT", hideCombatCheckbox, "BOTTOMLEFT", 0, -8)
+local qualityBorderCheckbox = CreateFrame("CheckButton", "MidnightTooltipQualityBorder", scrollChild, "InterfaceOptionsCheckButtonTemplate")
+qualityBorderCheckbox:SetPoint("TOPLEFT", hideCombatCheckbox, "BOTTOMLEFT", 0, -26)
 qualityBorderCheckbox.Text:SetText("Color borders by item quality")
 qualityBorderCheckbox.tooltipText = "When enabled, item tooltip borders will be colored based on item quality"
 qualityBorderCheckbox:SetScript("OnClick", function(self)
@@ -211,7 +280,7 @@ qualityBorderCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Class Colors checkbox
-local classColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipClassColors", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local classColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipClassColors", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 classColorsCheckbox:SetPoint("TOPLEFT", qualityBorderCheckbox, "BOTTOMLEFT", 0, -8)
 classColorsCheckbox.Text:SetText("Color player names by class")
 classColorsCheckbox.tooltipText = "When enabled, player names and tooltip text will be colored by their class"
@@ -221,7 +290,7 @@ classColorsCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Guild Colors checkbox
-local guildColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipGuildColors", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local guildColorsCheckbox = CreateFrame("CheckButton", "MidnightTooltipGuildColors", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 guildColorsCheckbox:SetPoint("TOPLEFT", classColorsCheckbox, "BOTTOMLEFT", 0, -8)
 guildColorsCheckbox.Text:SetText("Show guild name colors")
 guildColorsCheckbox.tooltipText = "When enabled, guild names will be colored differently for your guild members"
@@ -231,7 +300,7 @@ end)
 
 -- My Guild Color Picker
 local myGuildColorLabel, myGuildColorSwatch, myGuildColorTexture = CreateColorPickerSwatch(
-    optionsPanel, 
+    scrollChild, 
     "My Guild Color:", 
     guildColorsCheckbox, 
     "customGuildColorR", "customGuildColorG", "customGuildColorB",
@@ -240,7 +309,7 @@ local myGuildColorLabel, myGuildColorSwatch, myGuildColorTexture = CreateColorPi
 
 -- Other Guild Color Picker
 local otherGuildColorLabel, otherGuildColorSwatch, otherGuildColorTexture = CreateColorPickerSwatch(
-    optionsPanel,
+    scrollChild,
     "Other Guild Color:",
     myGuildColorLabel,
     "customOtherGuildColorR", "customOtherGuildColorG", "customOtherGuildColorB",
@@ -249,7 +318,7 @@ local otherGuildColorLabel, otherGuildColorSwatch, otherGuildColorTexture = Crea
 
 -- Right Column - Information Display Options
 -- Show Player Status checkbox (Row 1, Right Column)
-local playerStatusCheckbox = CreateFrame("CheckButton", "MidnightTooltipPlayerStatus", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local playerStatusCheckbox = CreateFrame("CheckButton", "MidnightTooltipPlayerStatus", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 playerStatusCheckbox:SetPoint("TOPLEFT", cursorAnchorCheckbox, "TOPRIGHT", COLUMN_OFFSET, 0)
 playerStatusCheckbox.Text:SetText("Show player status (AFK/DND)")
 playerStatusCheckbox.tooltipText = "When enabled, shows AFK and DND status on player names"
@@ -258,7 +327,7 @@ playerStatusCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Item Level checkbox (Row 2, Right Column)
-local iLevelCheckbox = CreateFrame("CheckButton", "MidnightTooltipItemLevel", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local iLevelCheckbox = CreateFrame("CheckButton", "MidnightTooltipItemLevel", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 iLevelCheckbox:SetPoint("TOPLEFT", playerStatusCheckbox, "BOTTOMLEFT", 0, -8)
 iLevelCheckbox.Text:SetText("Show player item level")
 iLevelCheckbox.tooltipText = "When enabled, shows the player's average item level"
@@ -267,7 +336,7 @@ iLevelCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Role Icon checkbox (Row 3, Right Column)
-local roleIconCheckbox = CreateFrame("CheckButton", "MidnightTooltipRoleIcon", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local roleIconCheckbox = CreateFrame("CheckButton", "MidnightTooltipRoleIcon", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 roleIconCheckbox:SetPoint("TOPLEFT", iLevelCheckbox, "BOTTOMLEFT", 0, -8)
 roleIconCheckbox.Text:SetText("Show role icon (Tank/Healer/DPS)")
 roleIconCheckbox.tooltipText = "When enabled, shows the player's role icon"
@@ -276,7 +345,7 @@ roleIconCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Mythic+ Rating checkbox (Row 4, Right Column)
-local mythicRatingCheckbox = CreateFrame("CheckButton", "MidnightTooltipMythicRating", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local mythicRatingCheckbox = CreateFrame("CheckButton", "MidnightTooltipMythicRating", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 mythicRatingCheckbox:SetPoint("TOPLEFT", roleIconCheckbox, "BOTTOMLEFT", 0, -8)
 mythicRatingCheckbox.Text:SetText("Show Mythic+ rating")
 mythicRatingCheckbox.tooltipText = "When enabled, shows the player's Mythic+ rating score"
@@ -285,7 +354,7 @@ mythicRatingCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Faction checkbox (Row 5, Right Column)
-local factionCheckbox = CreateFrame("CheckButton", "MidnightTooltipFaction", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local factionCheckbox = CreateFrame("CheckButton", "MidnightTooltipFaction", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 factionCheckbox:SetPoint("TOPLEFT", mythicRatingCheckbox, "BOTTOMLEFT", 0, -8)
 factionCheckbox.Text:SetText("Show faction (Horde/Alliance)")
 factionCheckbox.tooltipText = "When enabled, the faction line will show red for Horde and blue for Alliance"
@@ -294,7 +363,7 @@ factionCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Mount Info checkbox (Row 6, Right Column)
-local mountInfoCheckbox = CreateFrame("CheckButton", "MidnightTooltipMountInfo", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local mountInfoCheckbox = CreateFrame("CheckButton", "MidnightTooltipMountInfo", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 mountInfoCheckbox:SetPoint("TOPLEFT", factionCheckbox, "BOTTOMLEFT", 0, -8)
 mountInfoCheckbox.Text:SetText("Show mount information")
 mountInfoCheckbox.tooltipText = "When enabled, shows what mount a player is riding and collection status"
@@ -303,7 +372,7 @@ mountInfoCheckbox:SetScript("OnClick", function(self)
 end)
 
 -- Show Target of Target checkbox (Row 7, Right Column)
-local targetOfTargetCheckbox = CreateFrame("CheckButton", "MidnightTooltipTargetOfTarget", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+local targetOfTargetCheckbox = CreateFrame("CheckButton", "MidnightTooltipTargetOfTarget", scrollChild, "InterfaceOptionsCheckButtonTemplate")
 targetOfTargetCheckbox:SetPoint("TOPLEFT", mountInfoCheckbox, "BOTTOMLEFT", 0, -8)
 targetOfTargetCheckbox.Text:SetText("Show target of target")
 targetOfTargetCheckbox.tooltipText = "When enabled, shows who the unit is targeting"
@@ -311,15 +380,24 @@ targetOfTargetCheckbox:SetScript("OnClick", function(self)
     MidnightTooltipDB.showTargetOfTarget = self:GetChecked()
 end)
 
+-- Show Player Location checkbox (Row 8, Right Column)
+local playerLocationCheckbox = CreateFrame("CheckButton", "MidnightTooltipPlayerLocation", scrollChild, "InterfaceOptionsCheckButtonTemplate")
+playerLocationCheckbox:SetPoint("TOPLEFT", targetOfTargetCheckbox, "BOTTOMLEFT", 0, -8)
+playerLocationCheckbox.Text:SetText("Show player location")
+playerLocationCheckbox.tooltipText = "When enabled, shows the zone/subzone where the player is located"
+playerLocationCheckbox:SetScript("OnClick", function(self)
+    MidnightTooltipDB.showPlayerLocation = self:GetChecked()
+end)
+
 -- Disable OnValueChanged during initialization
 local isInitializing = true
 
 -- Anchor Point Dropdown
-local anchorLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local anchorLabel = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 anchorLabel:SetPoint("TOPLEFT", otherGuildColorLabel, "BOTTOMLEFT", 0, -16)
 anchorLabel:SetText("Tooltip Anchor Point:")
 
-local anchorDropdown = CreateFrame("Frame", "MidnightTooltipAnchorDropdown", optionsPanel, "UIDropDownMenuTemplate")
+local anchorDropdown = CreateFrame("Frame", "MidnightTooltipAnchorDropdown", scrollChild, "UIDropDownMenuTemplate")
 anchorDropdown:SetPoint("TOPLEFT", anchorLabel, "BOTTOMLEFT", -15, -5)
 
 local anchorPoints = {
@@ -366,11 +444,11 @@ end
 UIDropDownMenu_SetText(anchorDropdown, GetAnchorText(MidnightTooltipDB.anchorPoint or "BOTTOM"))
 
 -- X Offset slider
-local offsetXLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-offsetXLabel:SetPoint("TOPLEFT", targetOfTargetCheckbox, "BOTTOMLEFT", 0, -16)
+local offsetXLabel = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+offsetXLabel:SetPoint("TOPLEFT", anchorDropdown, "BOTTOMLEFT", 15, -16)
 offsetXLabel:SetText("Tooltip X Offset")
 
-local offsetXSlider = CreateFrame("Slider", "MidnightTooltipOffsetXSlider", optionsPanel, "OptionsSliderTemplate")
+local offsetXSlider = CreateFrame("Slider", "MidnightTooltipOffsetXSlider", scrollChild, "OptionsSliderTemplate")
 offsetXSlider:SetPoint("TOPLEFT", offsetXLabel, "BOTTOMLEFT", 20, -8)
 offsetXSlider:SetMinMaxValues(-200, 200)
 offsetXSlider:SetValueStep(1)
@@ -391,7 +469,7 @@ offsetXSlider:SetScript("OnValueChanged", function(self, value)
 end)
 
 -- X Offset decrease button
-local offsetXDecBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local offsetXDecBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 offsetXDecBtn:SetPoint("RIGHT", offsetXSlider, "LEFT", -5, 0)
 offsetXDecBtn:SetSize(20, 20)
 offsetXDecBtn:SetText("<")
@@ -401,7 +479,7 @@ offsetXDecBtn:SetScript("OnClick", function()
 end)
 
 -- X Offset increase button
-local offsetXIncBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local offsetXIncBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 offsetXIncBtn:SetPoint("LEFT", offsetXSlider, "RIGHT", 5, 0)
 offsetXIncBtn:SetSize(20, 20)
 offsetXIncBtn:SetText(">")
@@ -411,11 +489,11 @@ offsetXIncBtn:SetScript("OnClick", function()
 end)
 
 -- Y Offset slider
-local offsetYLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local offsetYLabel = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 offsetYLabel:SetPoint("TOPLEFT", offsetXSlider, "BOTTOMLEFT", -20, -16)
 offsetYLabel:SetText("Tooltip Y Offset")
 
-local offsetYSlider = CreateFrame("Slider", "MidnightTooltipOffsetYSlider", optionsPanel, "OptionsSliderTemplate")
+local offsetYSlider = CreateFrame("Slider", "MidnightTooltipOffsetYSlider", scrollChild, "OptionsSliderTemplate")
 offsetYSlider:SetPoint("TOPLEFT", offsetYLabel, "BOTTOMLEFT", 20, -8)
 offsetYSlider:SetMinMaxValues(-200, 200)
 offsetYSlider:SetValueStep(1)
@@ -436,7 +514,7 @@ offsetYSlider:SetScript("OnValueChanged", function(self, value)
 end)
 
 -- Y Offset decrease button
-local offsetYDecBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local offsetYDecBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 offsetYDecBtn:SetPoint("RIGHT", offsetYSlider, "LEFT", -5, 0)
 offsetYDecBtn:SetSize(20, 20)
 offsetYDecBtn:SetText("<")
@@ -446,7 +524,7 @@ offsetYDecBtn:SetScript("OnClick", function()
 end)
 
 -- Y Offset increase button
-local offsetYIncBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local offsetYIncBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 offsetYIncBtn:SetPoint("LEFT", offsetYSlider, "RIGHT", 5, 0)
 offsetYIncBtn:SetSize(20, 20)
 offsetYIncBtn:SetText(">")
@@ -456,11 +534,11 @@ offsetYIncBtn:SetScript("OnClick", function()
 end)
 
 -- Fade Out Delay slider
-local fadeOutLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local fadeOutLabel = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 fadeOutLabel:SetPoint("TOPLEFT", offsetYSlider, "BOTTOMLEFT", -20, -16)
 fadeOutLabel:SetText("Tooltip Fade Out Delay")
 
-local fadeOutSlider = CreateFrame("Slider", "MidnightTooltipFadeOutSlider", optionsPanel, "OptionsSliderTemplate")
+local fadeOutSlider = CreateFrame("Slider", "MidnightTooltipFadeOutSlider", scrollChild, "OptionsSliderTemplate")
 fadeOutSlider:SetPoint("TOPLEFT", fadeOutLabel, "BOTTOMLEFT", 20, -8)
 fadeOutSlider:SetMinMaxValues(0, 2)
 fadeOutSlider:SetValueStep(0.1)
@@ -481,7 +559,7 @@ fadeOutSlider:SetScript("OnValueChanged", function(self, value)
 end)
 
 -- Fade Out Delay decrease button
-local fadeOutDecBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local fadeOutDecBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 fadeOutDecBtn:SetPoint("RIGHT", fadeOutSlider, "LEFT", -5, 0)
 fadeOutDecBtn:SetSize(20, 20)
 fadeOutDecBtn:SetText("<")
@@ -491,7 +569,7 @@ fadeOutDecBtn:SetScript("OnClick", function()
 end)
 
 -- Fade Out Delay increase button
-local fadeOutIncBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local fadeOutIncBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 fadeOutIncBtn:SetPoint("LEFT", fadeOutSlider, "RIGHT", 5, 0)
 fadeOutIncBtn:SetSize(20, 20)
 fadeOutIncBtn:SetText(">")
@@ -501,11 +579,11 @@ fadeOutIncBtn:SetScript("OnClick", function()
 end)
 
 -- Tooltip Scale slider
-local scaleLabel = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+local scaleLabel = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 scaleLabel:SetPoint("TOPLEFT", fadeOutSlider, "BOTTOMLEFT", -20, -16)
 scaleLabel:SetText("Tooltip Scale")
 
-local scaleSlider = CreateFrame("Slider", "MidnightTooltipScaleSlider", optionsPanel, "OptionsSliderTemplate")
+local scaleSlider = CreateFrame("Slider", "MidnightTooltipScaleSlider", scrollChild, "OptionsSliderTemplate")
 scaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 20, -8)
 scaleSlider:SetMinMaxValues(50, 200)
 scaleSlider:SetValueStep(5)
@@ -526,7 +604,7 @@ scaleSlider:SetScript("OnValueChanged", function(self, value)
 end)
 
 -- Tooltip Scale decrease button
-local scaleDecBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local scaleDecBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 scaleDecBtn:SetPoint("RIGHT", scaleSlider, "LEFT", -5, 0)
 scaleDecBtn:SetSize(20, 20)
 scaleDecBtn:SetText("<")
@@ -536,7 +614,7 @@ scaleDecBtn:SetScript("OnClick", function()
 end)
 
 -- Tooltip Scale increase button
-local scaleIncBtn = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+local scaleIncBtn = CreateFrame("Button", nil, scrollChild, "UIPanelButtonTemplate")
 scaleIncBtn:SetPoint("LEFT", scaleSlider, "RIGHT", 5, 0)
 scaleIncBtn:SetSize(20, 20)
 scaleIncBtn:SetText(">")
@@ -546,13 +624,13 @@ scaleIncBtn:SetScript("OnClick", function()
 end)
 
 -- Info text about reloading
-local reloadInfo = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+local reloadInfo = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 reloadInfo:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -24)
 reloadInfo:SetText("|cFFFFFF00Settings are saved automatically.|r\nReload UI (|cFF00FFFF/mttr|r) to apply changes.")
 reloadInfo:SetJustifyH("LEFT")
 
 -- Save & Reload button
-local saveReloadButton = CreateFrame("Button", "MidnightTooltipSaveReload", optionsPanel, "UIPanelButtonTemplate")
+local saveReloadButton = CreateFrame("Button", "MidnightTooltipSaveReload", scrollChild, "UIPanelButtonTemplate")
 saveReloadButton:SetPoint("TOPLEFT", reloadInfo, "BOTTOMLEFT", 0, -8)
 saveReloadButton:SetSize(140, 25)
 saveReloadButton:SetText("Save & Reload UI")
@@ -562,7 +640,7 @@ saveReloadButton:SetScript("OnClick", function()
 end)
 
 -- Reset button
-local resetButton = CreateFrame("Button", "MidnightTooltipReset", optionsPanel, "UIPanelButtonTemplate")
+local resetButton = CreateFrame("Button", "MidnightTooltipReset", scrollChild, "UIPanelButtonTemplate")
 resetButton:SetPoint("LEFT", saveReloadButton, "RIGHT", 10, 0)
 resetButton:SetSize(120, 25)
 resetButton:SetText("Reset to Defaults")
@@ -574,6 +652,7 @@ resetButton:SetScript("OnClick", function()
     cursorAnchorCheckbox:SetChecked(defaults.enableCursorAnchor)
     cursorOnlyModeCheckbox:SetChecked(defaults.cursorOnlyMode)
     hideCombatCheckbox:SetChecked(defaults.hideTooltipsInCombat)
+    UIDropDownMenu_SetText(combatModDropdown, GetCombatModText(defaults.combatModifierKey))
     qualityBorderCheckbox:SetChecked(defaults.enableQualityBorder)
     classColorsCheckbox:SetChecked(defaults.showClassColors)
     UIDropDownMenu_SetText(anchorDropdown, GetAnchorText(defaults.anchorPoint))
@@ -585,6 +664,7 @@ resetButton:SetScript("OnClick", function()
     roleIconCheckbox:SetChecked(defaults.showRoleIcon)
     mythicRatingCheckbox:SetChecked(defaults.showMythicRating)
     targetOfTargetCheckbox:SetChecked(defaults.showTargetOfTarget)
+    playerLocationCheckbox:SetChecked(defaults.showPlayerLocation)
     -- Update sliders
     offsetXSlider:SetValue(defaults.cursorOffsetX)
     offsetYSlider:SetValue(defaults.cursorOffsetY)
@@ -858,6 +938,7 @@ RefreshUI = function()
     cursorAnchorCheckbox:SetChecked(MidnightTooltipDB.enableCursorAnchor)
     cursorOnlyModeCheckbox:SetChecked(MidnightTooltipDB.cursorOnlyMode)
     hideCombatCheckbox:SetChecked(MidnightTooltipDB.hideTooltipsInCombat)
+    UIDropDownMenu_SetText(combatModDropdown, GetCombatModText(MidnightTooltipDB.combatModifierKey or "shift"))
     qualityBorderCheckbox:SetChecked(MidnightTooltipDB.enableQualityBorder)
     classColorsCheckbox:SetChecked(MidnightTooltipDB.showClassColors)
     UIDropDownMenu_SetText(anchorDropdown, GetAnchorText(MidnightTooltipDB.anchorPoint or "BOTTOM"))
@@ -869,6 +950,7 @@ RefreshUI = function()
     roleIconCheckbox:SetChecked(MidnightTooltipDB.showRoleIcon)
     mythicRatingCheckbox:SetChecked(MidnightTooltipDB.showMythicRating)
     targetOfTargetCheckbox:SetChecked(MidnightTooltipDB.showTargetOfTarget)
+    playerLocationCheckbox:SetChecked(MidnightTooltipDB.showPlayerLocation)
     offsetXSlider:SetValue(MidnightTooltipDB.cursorOffsetX)
     offsetYSlider:SetValue(MidnightTooltipDB.cursorOffsetY)
     fadeOutSlider:SetValue(MidnightTooltipDB.fadeOutDelay or 0.2)
