@@ -471,7 +471,7 @@ local function ColorTooltipBorderByUnit(tooltip)
             end
         end
         
-        -- Get player's item level (only show for level 10+, similar to TipTac)
+        -- Get player's item level (only show for level 10+)
         if settingsCache.showItemLevel then
             local unitLevel = UnitLevel(unit)
             -- Only show item level for level 10+ players (matches Blizzard's minimum)
