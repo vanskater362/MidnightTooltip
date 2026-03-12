@@ -1111,9 +1111,9 @@ function MidnightTooltip:OnInitialize()
         ColorTooltipBorderByUnit(tooltip)
     end)
     
-    -- Hook the comparison tooltip function to position them properly
+    -- Hook the comparison tooltip function to apply scale only
     hooksecurefunc("GameTooltip_ShowCompareItem", function(self, anchorFrame)
-        -- Apply scale to shopping tooltips
+        -- Apply scale to shopping tooltips (let Blizzard handle positioning)
         if settingsCache.tooltipScale and settingsCache.tooltipScale > 0 then
             local scale = settingsCache.tooltipScale / 100
             if ShoppingTooltip1 then
@@ -1121,64 +1121,6 @@ function MidnightTooltip:OnInitialize()
             end
             if ShoppingTooltip2 then
                 ShoppingTooltip2:SetScale(scale)
-            end
-        end
-        
-        if ShoppingTooltip1 and ShoppingTooltip1:IsShown() then
-            ShoppingTooltip1:ClearAllPoints()
-            
-            -- Check if there's enough space on the left side of GameTooltip
-            -- Use pcall to safely handle secret values that cannot be compared
-            local success, tooltipLeft = pcall(GameTooltip.GetLeft, GameTooltip)
-            local screenWidth = GetScreenWidth()
-            local anchorRight = false
-            
-            -- Safely compare tooltipLeft (can be a secret value in some contexts like world map)
-            if success and tooltipLeft then
-                local compareSuccess, result = pcall(function() return tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) end)
-                if compareSuccess then
-                    anchorRight = result
-                end
-            end
-            
-            -- If tooltip is too far left, anchor to the right
-            if anchorRight then
-                ShoppingTooltip1:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", TOOLTIP_SPACING, 0)
-                
-                if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
-                    ShoppingTooltip2:ClearAllPoints()
-                    ShoppingTooltip2:SetPoint("TOPLEFT", ShoppingTooltip1, "TOPRIGHT", TOOLTIP_SPACING, 0)
-                end
-            else
-                -- Default: anchor to the left
-                ShoppingTooltip1:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -TOOLTIP_SPACING, 0)
-                
-                if ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
-                    ShoppingTooltip2:ClearAllPoints()
-                    ShoppingTooltip2:SetPoint("TOPRIGHT", ShoppingTooltip1, "TOPLEFT", -TOOLTIP_SPACING, 0)
-                end
-            end
-        elseif ShoppingTooltip2 and ShoppingTooltip2:IsShown() then
-            -- Handle case where only ShoppingTooltip2 is shown
-            ShoppingTooltip2:ClearAllPoints()
-            
-            -- Use pcall to safely handle secret values that cannot be compared
-            local success, tooltipLeft = pcall(GameTooltip.GetLeft, GameTooltip)
-            local screenWidth = GetScreenWidth()
-            local anchorRight = false
-            
-            -- Safely compare tooltipLeft
-            if success and tooltipLeft then
-                local compareSuccess, result = pcall(function() return tooltipLeft < (screenWidth * SCREEN_EDGE_THRESHOLD) end)
-                if compareSuccess then
-                    anchorRight = result
-                end
-            end
-            
-            if anchorRight then
-                ShoppingTooltip2:SetPoint("TOPLEFT", GameTooltip, "TOPRIGHT", TOOLTIP_SPACING, 0)
-            else
-                ShoppingTooltip2:SetPoint("TOPRIGHT", GameTooltip, "TOPLEFT", -TOOLTIP_SPACING, 0)
             end
         end
     end)
