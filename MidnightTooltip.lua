@@ -302,9 +302,16 @@ local function ColorTooltipBorder(tooltip, data)
     end
 end
 
--- Helper to strip color codes from text
+-- Helper to strip color codes from text (with secret string protection)
 local function StripColorCodes(text)
-    return gsub(gsub(text, COLOR_CODE_PATTERN, ""), COLOR_RESET_PATTERN, "")
+    -- Protect against secret/tainted strings in restricted instances
+    local success, result = pcall(function()
+        return gsub(gsub(text, COLOR_CODE_PATTERN, ""), COLOR_RESET_PATTERN, "")
+    end)
+    if success then
+        return result
+    end
+    return nil -- Return nil if text is tainted
 end
 
 -- Helper to get item level color based on value
@@ -370,17 +377,21 @@ local function ColorTooltipBorderByUnit(tooltip)
         if nameText then
             local success, name = pcall(nameText.GetText, nameText)
             if success and name then
-                local prefix = ""
-                if settingsCache.showPlayerStatus then
-                    local afkSuccess, isAFK = pcall(UnitIsAFK, unit)
-                    local dndSuccess, isDND = pcall(UnitIsDND, unit)
-                    if afkSuccess and isAFK then
-                        prefix = "|cFF808080[AFK]|r "
-                    elseif dndSuccess and isDND then
-                        prefix = "|cFFFF0000[DND]|r "
+                local cleanName = StripColorCodes(name)
+                -- Skip if name is tainted (StripColorCodes returns nil)
+                if cleanName then
+                    local prefix = ""
+                    if settingsCache.showPlayerStatus then
+                        local afkSuccess, isAFK = pcall(UnitIsAFK, unit)
+                        local dndSuccess, isDND = pcall(UnitIsDND, unit)
+                        if afkSuccess and isAFK then
+                            prefix = "|cFF808080[AFK]|r "
+                        elseif dndSuccess and isDND then
+                            prefix = "|cFFFF0000[DND]|r "
+                        end
                     end
+                    nameText:SetText(prefix .. cleanName)
                 end
-                nameText:SetText(prefix .. StripColorCodes(name))
             end
             if settingsCache.showClassColors then
                 nameText:SetTextColor(color.r, color.g, color.b)
@@ -429,18 +440,29 @@ local function ColorTooltipBorderByUnit(tooltip)
         for i = 2, numLines do
             local lineText = _G[tooltipName .. "TextLeft" .. i]
             if lineText then
-                local text = lineText:GetText()
-                if text then
+                local textSuccess, text = pcall(lineText.GetText, lineText)
+                if textSuccess and text then
                     -- Skip lines that might contain cooldown info - combined pattern for efficiency
-                    if not text:find("Recharging") and not text:find("sec") and not text:find("min") and not text:find("ooldown") then
+                    -- Wrap pattern matching in pcall to handle tainted strings
+                    local patternSuccess, hasCooldownText = pcall(function()
+                        return text:find("Recharging") or text:find("sec") or text:find("min") or text:find("ooldown")
+                    end)
+                    if patternSuccess and not hasCooldownText then
                         local cleanText = StripColorCodes(text)
+                        -- Skip if text is tainted (StripColorCodes returns nil)
+                        if not cleanText then
+                            break -- Exit loop if we encounter tainted text
+                        end
                         
-                        -- Check for guild name
+                        -- Check for guild name (wrap in pcall to handle any remaining taint)
                         local isGuildLine = false
                         if settingsCache.showGuildColors and guildName and i == 2 then
                             -- Guild name is typically on line 2
                             -- It may appear as "GuildName" or "GuildName-RealmName"
-                            if cleanText == guildName or cleanText:match("^" .. guildName:gsub("%-", "%%-") .. "%-") or cleanText:match("^" .. guildName:gsub("%-", "%%-") .. "$") then
+                            local guildMatchSuccess, isGuildMatch = pcall(function()
+                                return cleanText == guildName or cleanText:match("^" .. guildName:gsub("%-", "%%-") .. "%-") or cleanText:match("^" .. guildName:gsub("%-", "%%-") .. "$")
+                            end)
+                            if guildMatchSuccess and isGuildMatch then
                                 isGuildLine = true
                                 lineText:SetText(cleanText)
                                 if isGuildMate then
@@ -452,9 +474,13 @@ local function ColorTooltipBorderByUnit(tooltip)
                         end
                         
                         if not isGuildLine then
-                            if cleanText:match("Horde") or cleanText:match("Alliance") then
+                            -- Wrap faction/class checks in pcall
+                            local factionSuccess, isHorde, isAlliance = pcall(function()
+                                return cleanText:match("Horde"), cleanText:match("Alliance")
+                            end)
+                            if factionSuccess and (isHorde or isAlliance) then
                                 if settingsCache.showFaction then
-                                    if cleanText:match("Horde") then
+                                    if isHorde then
                                         lineText:SetTextColor(1.0, 0.0, 0.0)
                                     else
                                         lineText:SetTextColor(0.0, 0.44, 0.87)
@@ -462,8 +488,11 @@ local function ColorTooltipBorderByUnit(tooltip)
                                 else
                                     lineText:SetText("")  -- Hide the line
                                 end
-                            elseif settingsCache.showClassColors and not cleanText:match("^Level") then
-                                lineText:SetTextColor(color.r, color.g, color.b)
+                            elseif factionSuccess and settingsCache.showClassColors then
+                                local levelSuccess, isLevelLine = pcall(function() return cleanText:match("^Level") end)
+                                if levelSuccess and not isLevelLine then
+                                    lineText:SetTextColor(color.r, color.g, color.b)
+                                end
                             end
                         end
                     end
@@ -505,11 +534,14 @@ local function ColorTooltipBorderByUnit(tooltip)
                         for i = 2, numLines do
                             local lineText = _G[tooltipName .. "TextLeft" .. i]
                             if lineText then
-                                local text = lineText:GetText()
-                                if text then
+                                local textSuccess, text = pcall(lineText.GetText, lineText)
+                                if textSuccess and text then
                                     -- Look for "Item Level: XXX" or localized variants using ITEM_LEVEL pattern
-                                    local ilvl = text:match("Item Level:?%s*(%d+)") or text:match("(%d+)%s*Item Level")
-                                    if ilvl then
+                                    -- Wrap in pcall to handle tainted strings
+                                    local matchSuccess, ilvl = pcall(function()
+                                        return text:match("Item Level:?%s*(%d+)") or text:match("(%d+)%s*Item Level")
+                                    end)
+                                    if matchSuccess and ilvl then
                                         avgItemLevel = tonumber(ilvl)
                                         -- Hide the original line since we'll add our own
                                         lineText:SetText("")
@@ -1040,7 +1072,7 @@ function MidnightTooltip:OnInitialize()
         if not fadeStartTime and self:IsShown() and not isInRestrictedInstance then
             local success, _, unit = pcall(self.GetUnit, self)
             if success and unit then
-                -- Safely check if this is a mouseover tooltip
+                -- Safely check if this is a mouseover tooltip (entire comparison in pcall)
                 local compareSuccess, isMouseover = pcall(function() return unit == "mouseover" end)
                 if compareSuccess and isMouseover then
                     -- For mouseover tooltips, check if mouse is still over the unit
@@ -1052,6 +1084,11 @@ function MidnightTooltip:OnInitialize()
         end
         
         -- Handle custom fade out
+        -- Skip fade logic in restricted instances to prevent taint from GetAlpha comparisons
+        if isInRestrictedInstance then
+            return
+        end
+        
         if fadeStartTime then
             local fadeTime = currentTime - fadeStartTime
             local fadeDelay = settingsCache.fadeOutDelay or 0.2
@@ -1068,7 +1105,11 @@ function MidnightTooltip:OnInitialize()
             end
         else
             -- Ensure tooltip is fully opaque when not fading
-            if self:GetAlpha() < 1 then
+            -- Wrap entire comparison in pcall since the value itself may be tainted
+            local alphaCheckSuccess, needsReset = pcall(function()
+                return self:GetAlpha() < 1
+            end)
+            if alphaCheckSuccess and needsReset then
                 self:SetAlpha(1)
             end
         end
