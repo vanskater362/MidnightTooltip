@@ -342,7 +342,22 @@ end
 
 -- Helper to strip color codes from text
 local function StripColorCodes(text)
-    return gsub(gsub(text, COLOR_CODE_PATTERN, ""), COLOR_RESET_PATTERN, "")
+    if not text then
+        return ""
+    end
+
+    -- Some tooltip names can be secure/secret strings in restricted contexts.
+    -- Running string operations on those values can throw, so guard with pcall.
+    local success, strippedText = pcall(function()
+        local noColorCode = gsub(text, COLOR_CODE_PATTERN, "")
+        return gsub(noColorCode, COLOR_RESET_PATTERN, "")
+    end)
+
+    if success and strippedText then
+        return strippedText
+    end
+
+    return text
 end
 
 -- Helper to get item level color based on value
@@ -418,7 +433,20 @@ local function ColorTooltipBorderByUnit(tooltip)
                         prefix = "|cFFFF0000[DND]|r "
                     end
                 end
-                nameText:SetText(prefix .. StripColorCodes(name))
+                -- Build and set text in pcall so secret string values never hard-error.
+                local setNameSuccess = pcall(function()
+                    local cleanName = StripColorCodes(name)
+                    if prefix ~= "" then
+                        nameText:SetText(prefix .. cleanName)
+                    else
+                        nameText:SetText(cleanName)
+                    end
+                end)
+
+                -- Fallback: preserve original text if secure string manipulation failed.
+                if not setNameSuccess then
+                    pcall(nameText.SetText, nameText, name)
+                end
             end
             if settingsCache.showClassColors then
                 nameText:SetTextColor(color.r, color.g, color.b)
