@@ -582,8 +582,19 @@ local function ColorTooltipBorderByUnit(tooltip)
                         if lineText then
                             local text = lineText:GetText()
                             if text then
-                                -- Look for "Item Level: XXX" or localized variants
-                                local ilvl = text:match("Item Level:?%s*(%d+)") or text:match("(%d+)%s*Item Level")
+                                -- Look for "Item Level: XXX" or localized variants.
+                                -- Some tooltip lines can be secret strings; guard string operations.
+                                local directMatchSuccess, ilvl = pcall(string.match, text, "Item Level:?%s*(%d+)")
+                                if not ilvl then
+                                    local reverseMatchSuccess
+                                    reverseMatchSuccess, ilvl = pcall(string.match, text, "(%d+)%s*Item Level")
+                                    if not reverseMatchSuccess then
+                                        ilvl = nil
+                                    end
+                                elseif not directMatchSuccess then
+                                    ilvl = nil
+                                end
+
                                 if ilvl then
                                     avgItemLevel = tonumber(ilvl)
                                     -- Hide the original line since we'll add our own
