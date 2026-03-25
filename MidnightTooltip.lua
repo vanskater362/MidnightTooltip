@@ -988,10 +988,11 @@ function MidnightTooltip:OnInitialize()
                 self:SetAlpha(1 - fadeProgress)
             end
         else
-            -- Ensure tooltip is fully opaque when not fading
-            if self:GetAlpha() < 1 then
-                self:SetAlpha(1)
-            end
+            -- Ensure tooltip is fully opaque when not fading.
+            -- NOTE: Avoid comparing the alpha value here; in some restricted tooltip
+            -- update paths Blizzard can hand back a protected/secret numeric value
+            -- that errors when compared (e.g. `self:GetAlpha() < 1`).
+            self:SetAlpha(1)
         end
     end)
     
