@@ -495,10 +495,13 @@ local function ColorTooltipBorderByUnit(tooltip)
         for i = 2, numLines do
             local lineText = _G[tooltipName .. "TextLeft" .. i]
             if lineText then
-                local text = lineText:GetText()
-                if text then
+                local textSuccess, text = pcall(lineText.GetText, lineText)
+                if textSuccess and text then
+                    local findSuccess, hasRecharging, hasSec, hasMin, hasCooldown = pcall(function()
+                        return string.find(text, "Recharging", 1, true), string.find(text, "sec", 1, true), string.find(text, "min", 1, true), string.find(text, "ooldown", 1, true)
+                    end)
                     -- Skip lines that might contain cooldown info - combined pattern for efficiency
-                    if not text:find("Recharging") and not text:find("sec") and not text:find("min") and not text:find("ooldown") then
+                    if findSuccess and not hasRecharging and not hasSec and not hasMin and not hasCooldown then
                         local cleanText = StripColorCodes(text)
                         
                         -- Check for guild name
@@ -506,7 +509,14 @@ local function ColorTooltipBorderByUnit(tooltip)
                         if settingsCache.showGuildColors and guildName and i == 2 then
                             -- Guild name is typically on line 2
                             -- It may appear as "GuildName" or "GuildName-RealmName"
-                            if cleanText == guildName or cleanText:match("^" .. guildName:gsub("%-", "%%-") .. "%-") or cleanText:match("^" .. guildName:gsub("%-", "%%-") .. "$") then
+                            local guildPatternSuccess, escapedGuildName = pcall(string.gsub, guildName, "%-", "%%-")
+                            local guildLineSuccess, guildWithRealm, guildExact = pcall(function()
+                                if not guildPatternSuccess or not escapedGuildName then
+                                    return false, false
+                                end
+                                return string.match(cleanText, "^" .. escapedGuildName .. "%-"), string.match(cleanText, "^" .. escapedGuildName .. "$")
+                            end)
+                            if cleanText == guildName or (guildLineSuccess and (guildWithRealm or guildExact)) then
                                 isGuildLine = true
                                 lineText:SetText(cleanText)
                                 if isGuildMate then
@@ -518,9 +528,12 @@ local function ColorTooltipBorderByUnit(tooltip)
                         end
                         
                         if not isGuildLine then
-                            if cleanText:match("Horde") or cleanText:match("Alliance") then
+                            local factionMatchSuccess, hordeMatch, allianceMatch = pcall(function()
+                                return string.match(cleanText, "Horde"), string.match(cleanText, "Alliance")
+                            end)
+                            if factionMatchSuccess and (hordeMatch or allianceMatch) then
                                 if settingsCache.showFaction then
-                                    if cleanText:match("Horde") then
+                                    if hordeMatch then
                                         lineText:SetTextColor(1.0, 0.0, 0.0)
                                     else
                                         lineText:SetTextColor(0.0, 0.44, 0.87)
@@ -528,8 +541,11 @@ local function ColorTooltipBorderByUnit(tooltip)
                                 else
                                     lineText:SetText("")  -- Hide the line
                                 end
-                            elseif settingsCache.showClassColors and not cleanText:match("^Level") then
-                                lineText:SetTextColor(color.r, color.g, color.b)
+                            elseif settingsCache.showClassColors then
+                                local levelMatchSuccess, levelMatch = pcall(string.match, cleanText, "^Level")
+                                if levelMatchSuccess and not levelMatch then
+                                    lineText:SetTextColor(color.r, color.g, color.b)
+                                end
                             end
                         end
                     end
