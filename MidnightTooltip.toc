@@ -1,9 +1,9 @@
 ## MidnightTooltip.toc
-## Interface: 120001
+## Interface: 120001 120005
 ## Title: MidnightTooltip
 ## Notes: A tooltip enhancement addon for World of Warcraft.
 ## Author: Vanskater
-## Version: 1.00.31
+## Version: 1.00.32
 ## SavedVariablesPerCharacter: MidnightTooltipDB
 ## SavedVariables: MidnightTooltipProfiles
 ## IconTexture: Interface\Icons\INV_Misc_Book_11
