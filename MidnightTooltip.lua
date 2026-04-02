@@ -1134,11 +1134,6 @@ function MidnightTooltip:OnInitialize()
     
     -- Hook tooltip unit display to color border by class/reaction (only for non-item tooltips)
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip, data)
-        -- Skip in dungeons/raids to prevent taint
-        -- The issue: calling tooltip:GetUnit() during TooltipDataProcessor for world cursor
-        -- tooltips taints the tooltip, causing Blizzard's code to fail
-        if isInRestrictedInstance then return end
-        
         -- Skip in cursor-only mode
         if settingsCache.cursorOnlyMode then return end
         
@@ -1149,6 +1144,22 @@ function MidnightTooltip:OnInitialize()
                 return -- This is an item tooltip, don't override
             end
         end
+        
+        -- In restricted instances, only process grouped players to prevent taint
+        -- Processing non-grouped units (world cursor tooltips) can taint the tooltip
+        if isInRestrictedInstance then
+            local success, _, unit = pcall(tooltip.GetUnit, tooltip)
+            if not success or not unit then return end
+            
+            -- Only process party/raid members in restricted instances
+            local inPartySuccess, inParty = pcall(UnitInParty, unit)
+            local inRaidSuccess, inRaid = pcall(UnitInRaid, unit)
+            local isSelf = (unit == "player")
+            if not isSelf and not (inPartySuccess and inParty) and not (inRaidSuccess and inRaid) then
+                return -- Skip non-grouped players in restricted instances
+            end
+        end
+        
         ColorTooltipBorderByUnit(tooltip)
     end)
     
