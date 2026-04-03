@@ -102,6 +102,15 @@ local CanInspect = CanInspect
 local NotifyInspect = NotifyInspect
 local CheckInteractDistance = CheckInteractDistance
 
+-- Helper to check if a value is a secret/tainted value (WoW API)
+-- This is used to safely handle values that would cause taint errors if accessed
+local function IsSecretValue(value)
+    if issecretvalue then
+        return issecretvalue(value)
+    end
+    return false
+end
+
 -- Cached UIParent scale (updated on UI_SCALE_CHANGED)
 local cachedUIScale = 1
 local function UpdateCachedUIScale()
@@ -112,12 +121,6 @@ end
 local ILVL_LEGENDARY_THRESHOLD = 285
 local ILVL_EPIC_THRESHOLD = 270
 local ILVL_RARE_THRESHOLD = 260
-
--- Screen positioning constants
-local SCREEN_EDGE_THRESHOLD = 0.25
-
--- Tooltip positioning offsets
-local TOOLTIP_SPACING = 2
 
 -- Cache whether we're in a restricted environment (dungeon/raid)
 local isInRestrictedInstance = false
@@ -203,7 +206,7 @@ local function UpdateRestrictedState()
     if not inInstance then 
         isInRestrictedInstance = false
     else
-        -- Disable in dungeons (party), raids, and scenarios
+        -- Mark as restricted in dungeons (party), raids, and scenarios
         isInRestrictedInstance = instanceType == "party" or instanceType == "raid" or instanceType == "scenario"
     end
 end
@@ -329,10 +332,15 @@ end
 
 -- Function to color tooltip text and border based on unit class/faction
 local function ColorTooltipBorderByUnit(tooltip)
-    -- Wrap in pcall to prevent tainting secure quest tooltips
-    -- GetUnit returns (name, unit), so pcall returns (success, name, unit)
-    local success, _, unit = pcall(tooltip.GetUnit, tooltip)
-    if not success or not unit then
+    -- Get unit from tooltip using TooltipUtil (modern API)
+    local _, unit = TooltipUtil.GetDisplayedUnit(tooltip)
+    
+    -- Check if unit is a secret value (tainted) - skip processing if so
+    if IsSecretValue(unit) then
+        return
+    end
+    
+    if not unit then
         if not settingsCache.enableQualityBorder then
             SetBorderColor(tooltip, 1, 1, 1)
         end
@@ -346,9 +354,7 @@ local function ColorTooltipBorderByUnit(tooltip)
     end
     
     -- Check if unit actually exists (prevents issues with quest/item tooltips)
-    -- Wrap in pcall to avoid taint errors with secret values in scenarios/restricted content
-    local unitCheckSuccess, unitExists = pcall(UnitExists, unit)
-    if not unitCheckSuccess or not unitExists then
+    if not UnitExists(unit) then
         return
     end
     
@@ -382,11 +388,13 @@ local function ColorTooltipBorderByUnit(tooltip)
                 if cleanName then
                     local prefix = ""
                     if settingsCache.showPlayerStatus then
-                        local afkSuccess, isAFK = pcall(UnitIsAFK, unit)
-                        local dndSuccess, isDND = pcall(UnitIsDND, unit)
-                        if afkSuccess and isAFK then
+                        -- Check AFK/DND status, but skip if values are secret/tainted
+                        local isAFK = UnitIsAFK(unit)
+                        local isDND = UnitIsDND(unit)
+                        -- Use IsSecretValue to check for tainted values before testing
+                        if not IsSecretValue(isAFK) and isAFK then
                             prefix = "|cFF808080[AFK]|r "
-                        elseif dndSuccess and isDND then
+                        elseif not IsSecretValue(isDND) and isDND then
                             prefix = "|cFFFF0000[DND]|r "
                         end
                     end
@@ -775,7 +783,6 @@ function MidnightTooltip:OnInitialize()
             UpdateCachedUIScale()
         else
             UpdateRestrictedState()
-            -- Also update scale on world enter in case it wasn't set
             UpdateCachedUIScale()
         end
     end)
@@ -1129,10 +1136,7 @@ function MidnightTooltip:OnInitialize()
         ColorTooltipBorder(tooltip, data)
     end)
     
-    -- Hook tooltip unit display to color border by class/reaction (only for non-item tooltips)
-    -- REMOVED DUPLICATE: The first Unit callback that called ColorTooltipBorder was for items, not units
-    
-    -- Hook tooltip unit display to color border by class/reaction (only for non-item tooltips)
+    -- Hook tooltip unit display to color border by class/reaction
     TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Unit, function(tooltip, data)
         -- Skip in cursor-only mode
         if settingsCache.cursorOnlyMode then return end
@@ -1145,21 +1149,8 @@ function MidnightTooltip:OnInitialize()
             end
         end
         
-        -- In restricted instances, only process grouped players to prevent taint
-        -- Processing non-grouped units (world cursor tooltips) can taint the tooltip
-        if isInRestrictedInstance then
-            local success, _, unit = pcall(tooltip.GetUnit, tooltip)
-            if not success or not unit then return end
-            
-            -- Only process party/raid members in restricted instances
-            local inPartySuccess, inParty = pcall(UnitInParty, unit)
-            local inRaidSuccess, inRaid = pcall(UnitInRaid, unit)
-            local isSelf = (unit == "player")
-            if not isSelf and not (inPartySuccess and inParty) and not (inRaidSuccess and inRaid) then
-                return -- Skip non-grouped players in restricted instances
-            end
-        end
-        
+        -- ColorTooltipBorderByUnit now handles secret value detection internally
+        -- using issecretvalue() API, so we can call it in all instances
         ColorTooltipBorderByUnit(tooltip)
     end)
     
