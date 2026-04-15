@@ -189,11 +189,13 @@ end
 -- Inspect throttling to avoid hitting rate limits
 local lastInspectTime = 0
 local lastInspectedGUID = nil
+local lastInspectedUnit = nil -- Store the unit we inspected
 local INSPECT_THROTTLE_SECONDS = 1.5 -- Wait at least 1.5 seconds between inspect requests
 local INSPECT_CACHE_TTL = 300 -- 5 minute cache TTL
 local MAX_CACHE_SIZE = 100 -- Maximum number of cached inspects
 local inspectedGUIDs = {} -- Cache of GUIDs we've successfully inspected with timestamp
 local inspectedIlvls = {} -- Cache of item levels indexed by GUID
+local pendingInspects = {} -- Map of GUID -> unit for pending inspect requests
 
 -- Cache cleanup timer
 local lastCacheCleanup = 0
@@ -213,15 +215,20 @@ end
 
 -- Request inspect data for a unit if appropriate
 local function RequestInspectIfNeeded(unit)
-    -- Only inspect targeted players
-    if unit ~= "target" then return end
+    -- Accept target, mouseover, and nameplate units
+    local isValidUnit = unit == "target" or unit == "mouseover" or (unit and unit:match("^nameplate%d+$"))
+    if not isValidUnit then return end
     
     -- Don't interfere with the game's inspect frame
     if InspectFrame and InspectFrame:IsShown() then return end
     
     -- Only inspect players (not yourself)
     local isPlayerSuccess, isPlayer = pcall(UnitIsPlayer, unit)
-    if not isPlayerSuccess or not isPlayer or unit == "player" then return end
+    if not isPlayerSuccess or not isPlayer then return end
+    
+    -- Don't inspect yourself
+    local isSelf = UnitIsUnit(unit, "player")
+    if isSelf then return end
     
     -- Skip party/raid members (auto-inspected by the game)
     local inPartySuccess, inParty = pcall(UnitInParty, unit)
@@ -255,6 +262,8 @@ local function RequestInspectIfNeeded(unit)
     if notifySuccess then
         lastInspectTime = currentTime
         lastInspectedGUID = guid
+        lastInspectedUnit = unit
+        pendingInspects[guid] = unit -- Store the unit for this GUID
     end
 end
 
@@ -526,12 +535,13 @@ local function ColorTooltipBorderByUnit(tooltip)
                     
                     -- If not in cache, try inspect API (works for party/raid and current inspect target)
                     if not avgItemLevel then
+                        -- Try with unit parameter (works for party/raid members and inspected targets)
                         local inspectSuccess, inspectIlvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
                         if inspectSuccess and inspectIlvl and inspectIlvl > 0 then
                             avgItemLevel = inspectIlvl
                             -- Cache the result
                             if guidSuccess and guid then
-                                inspectedIlvls[guid] = inspectIlvl
+                                inspectedIlvls[guid] = avgItemLevel
                             end
                         end
                     end
@@ -745,23 +755,85 @@ function MidnightTooltip:OnInitialize()
     local inspectFrame = CreateFrame("Frame")
     inspectFrame:RegisterEvent("INSPECT_READY")
     inspectFrame:SetScript("OnEvent", function(self, event, guid)
-        if event == "INSPECT_READY" and guid then
-            -- Cache the GUID now that we have valid inspect data
-            inspectedGUIDs[guid] = GetTime()
+        if event == "INSPECT_READY" then
+            -- Get the GUID from the event or from current inspect target
+            local inspectGUID = guid
+            if not inspectGUID then
+                inspectGUID = lastInspectedGUID
+            end
             
-            -- Store the ilvl data for this GUID
-            -- Find the unit with this GUID and get their ilvl
-            for _, unit in ipairs({"target", "mouseover", "player"}) do
-                local guidSuccess, unitGuid = pcall(UnitGUID, unit)
-                if guidSuccess and unitGuid then
-                    -- Use pcall to safely compare GUIDs (can be secret values in combat/battlegrounds)
-                    local compareSuccess, matches = pcall(function() return unitGuid == guid end)
-                    if compareSuccess and matches then
-                        local success, ilvl = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
-                        if success and ilvl and ilvl > 0 then
-                            inspectedIlvls[guid] = ilvl
+            if not inspectGUID then return end
+            
+            -- Cache the GUID now that we have valid inspect data
+            inspectedGUIDs[inspectGUID] = GetTime()
+            
+            -- Get the stored unit for this GUID, or try to find it
+            local inspectUnit = pendingInspects[inspectGUID] or lastInspectedUnit
+            
+            -- Try to get ilvl using the stored unit or find a matching unit
+            local ilvl = nil
+            
+            -- First, try with the stored unit if it still matches the GUID
+            if inspectUnit then
+                local unitGUID = UnitGUID(inspectUnit)
+                if unitGUID == inspectGUID then
+                    local success, result = pcall(C_PaperDollInfo.GetInspectItemLevel, inspectUnit)
+                    if success and result and result > 0 then
+                        ilvl = result
+                    end
+                end
+            end
+            
+            -- If that didn't work, scan all possible units
+            if not ilvl or ilvl == 0 then
+                local unitsToCheck = {"target", "mouseover"}
+                -- Add nameplate units
+                for i = 1, 40 do
+                    table.insert(unitsToCheck, "nameplate" .. i)
+                end
+                
+                for _, unit in ipairs(unitsToCheck) do
+                    local unitGUID = UnitGUID(unit)
+                    if unitGUID == inspectGUID then
+                        local success, result = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
+                        if success and result and result > 0 then
+                            ilvl = result
+                            break
                         end
-                        break
+                    end
+                end
+            end
+            
+            -- Store the result
+            if ilvl and ilvl > 0 then
+                inspectedIlvls[inspectGUID] = ilvl
+            end
+            
+            -- Clean up pending inspect
+            pendingInspects[inspectGUID] = nil
+            
+            -- Update the tooltip if it's currently showing this player
+            -- Instead of refreshing the whole tooltip (which breaks fade behavior),
+            -- just update the item level line directly
+            if GameTooltip:IsShown() and inspectedIlvls[inspectGUID] then
+                local _, tooltipUnit = TooltipUtil.GetDisplayedUnit(GameTooltip)
+                if tooltipUnit then
+                    local tooltipGUID = UnitGUID(tooltipUnit)
+                    if tooltipGUID == inspectGUID then
+                        -- Find and update the "Target player to get ilvl" line
+                        local numLines = GameTooltip:NumLines()
+                        for i = 1, numLines do
+                            local lineText = _G["GameTooltipTextLeft" .. i]
+                            if lineText then
+                                local text = lineText:GetText()
+                                if text and text:find("Target player to get ilvl") then
+                                    local cachedIlvl = inspectedIlvls[inspectGUID]
+                                    local ilvlColor = GetItemLevelColor(cachedIlvl)
+                                    lineText:SetText(format("|cFFFFFFFFItem Level: |r%s%d|r", ilvlColor, floor(cachedIlvl)))
+                                    break
+                                end
+                            end
+                        end
                     end
                 end
             end
