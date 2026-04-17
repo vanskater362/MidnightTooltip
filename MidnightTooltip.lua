@@ -215,8 +215,9 @@ end
 
 -- Request inspect data for a unit if appropriate
 local function RequestInspectIfNeeded(unit)
-    -- Accept target, mouseover, and nameplate units
-    local isValidUnit = unit == "target" or unit == "mouseover" or (unit and unit:match("^nameplate%d+$"))
+    -- Accept target, mouseover, nameplate, party, and raid units
+    local isValidUnit = unit == "target" or unit == "mouseover" or 
+        (unit and (unit:match("^nameplate%d+$") or unit:match("^party%d+$") or unit:match("^raid%d+$")))
     if not isValidUnit then return end
     
     -- Don't interfere with the game's inspect frame
@@ -230,18 +231,17 @@ local function RequestInspectIfNeeded(unit)
     local isSelf = UnitIsUnit(unit, "player")
     if isSelf then return end
     
-    -- Skip party/raid members (auto-inspected by the game)
-    local inPartySuccess, inParty = pcall(UnitInParty, unit)
-    local inRaidSuccess, inRaid = pcall(UnitInRaid, unit)
-    if (inPartySuccess and inParty) or (inRaidSuccess and inRaid) then return end
-    
     -- Get unit GUID for tracking
     local guidSuccess, guid = pcall(UnitGUID, unit)
     if not guidSuccess or not guid then return end
     
     -- Check if already inspected recently (cache with TTL)
+    -- Use pcall for table access to handle secret/tainted strings
     local currentTime = GetTime()
-    if inspectedGUIDs[guid] and currentTime - inspectedGUIDs[guid] < INSPECT_CACHE_TTL then return end
+    local cacheCheckSuccess, isCached = pcall(function()
+        return inspectedGUIDs[guid] and currentTime - inspectedGUIDs[guid] < INSPECT_CACHE_TTL
+    end)
+    if cacheCheckSuccess and isCached then return end
     
     -- Check if can inspect
     local canInspectSuccess, canInspect = pcall(CanInspect, unit)
@@ -251,19 +251,27 @@ local function RequestInspectIfNeeded(unit)
     if currentTime - lastInspectTime < INSPECT_THROTTLE_SECONDS then return end
     
     -- Additional throttle for same player (30 seconds)
-    if guid == lastInspectedGUID and currentTime - lastInspectTime < 30 then return end
+    -- Use pcall for GUID comparison to handle secret/tainted strings
+    local sameGuidSuccess, isSameGuid = pcall(function() return guid == lastInspectedGUID end)
+    if sameGuidSuccess and isSameGuid and currentTime - lastInspectTime < 30 then return end
     
     -- Check range
     local inRangeSuccess, inRange = pcall(CheckInteractDistance, unit, 1)
     if not inRangeSuccess or not inRange then return end
     
+    -- Don't call NotifyInspect during combat (protected function)
+    if InCombatLockdown() then return end
+    
     -- Send inspect request
     local notifySuccess = pcall(NotifyInspect, unit)
     if notifySuccess then
         lastInspectTime = currentTime
-        lastInspectedGUID = guid
+        -- Use pcall for assignments that use potentially tainted GUIDs
+        pcall(function()
+            lastInspectedGUID = guid
+            pendingInspects[guid] = unit
+        end)
         lastInspectedUnit = unit
-        pendingInspects[guid] = unit -- Store the unit for this GUID
     end
 end
 
@@ -529,8 +537,15 @@ local function ColorTooltipBorderByUnit(tooltip)
                 else
                     -- First check our GUID cache for previously inspected data
                     local guidSuccess, guid = pcall(UnitGUID, unit)
-                    if guidSuccess and guid and inspectedIlvls[guid] then
-                        avgItemLevel = inspectedIlvls[guid]
+                    -- Use pcall for table access with potentially tainted GUIDs
+                    local cacheSuccess, cachedIlvl = pcall(function()
+                        if guidSuccess and guid then
+                            return inspectedIlvls[guid]
+                        end
+                        return nil
+                    end)
+                    if cacheSuccess and cachedIlvl then
+                        avgItemLevel = cachedIlvl
                     end
                     
                     -- If not in cache, try inspect API (works for party/raid and current inspect target)
@@ -540,9 +555,11 @@ local function ColorTooltipBorderByUnit(tooltip)
                         if inspectSuccess and inspectIlvl and inspectIlvl > 0 then
                             avgItemLevel = inspectIlvl
                             -- Cache the result
-                            if guidSuccess and guid then
-                                inspectedIlvls[guid] = avgItemLevel
-                            end
+                            pcall(function()
+                                if guidSuccess and guid then
+                                    inspectedIlvls[guid] = avgItemLevel
+                                end
+                            end)
                         end
                     end
                     
@@ -564,9 +581,11 @@ local function ColorTooltipBorderByUnit(tooltip)
                                         -- Hide the original line since we'll add our own
                                         lineText:SetText("")
                                         -- Cache the result
-                                        if guidSuccess and guid then
-                                            inspectedIlvls[guid] = avgItemLevel
-                                        end
+                                        pcall(function()
+                                            if guidSuccess and guid then
+                                                inspectedIlvls[guid] = avgItemLevel
+                                            end
+                                        end)
                                         break
                                     end
                                 end
@@ -775,8 +794,10 @@ function MidnightTooltip:OnInitialize()
             
             -- First, try with the stored unit if it still matches the GUID
             if inspectUnit then
-                local unitGUID = UnitGUID(inspectUnit)
-                if unitGUID == inspectGUID then
+                local guidSuccess, unitGUID = pcall(UnitGUID, inspectUnit)
+                -- Use pcall for GUID comparison to handle secret/tainted strings
+                local matchSuccess, isMatch = pcall(function() return unitGUID and unitGUID == inspectGUID end)
+                if guidSuccess and matchSuccess and isMatch then
                     local success, result = pcall(C_PaperDollInfo.GetInspectItemLevel, inspectUnit)
                     if success and result and result > 0 then
                         ilvl = result
@@ -787,14 +808,24 @@ function MidnightTooltip:OnInitialize()
             -- If that didn't work, scan all possible units
             if not ilvl or ilvl == 0 then
                 local unitsToCheck = {"target", "mouseover"}
+                -- Add party units
+                for i = 1, 4 do
+                    table.insert(unitsToCheck, "party" .. i)
+                end
+                -- Add raid units
+                for i = 1, 40 do
+                    table.insert(unitsToCheck, "raid" .. i)
+                end
                 -- Add nameplate units
                 for i = 1, 40 do
                     table.insert(unitsToCheck, "nameplate" .. i)
                 end
                 
                 for _, unit in ipairs(unitsToCheck) do
-                    local unitGUID = UnitGUID(unit)
-                    if unitGUID == inspectGUID then
+                    local guidSuccess, unitGUID = pcall(UnitGUID, unit)
+                    -- Use pcall for GUID comparison to handle secret/tainted strings
+                    local matchSuccess, isMatch = pcall(function() return unitGUID and unitGUID == inspectGUID end)
+                    if guidSuccess and matchSuccess and isMatch then
                         local success, result = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
                         if success and result and result > 0 then
                             ilvl = result
@@ -818,8 +849,10 @@ function MidnightTooltip:OnInitialize()
             if GameTooltip:IsShown() and inspectedIlvls[inspectGUID] then
                 local _, tooltipUnit = TooltipUtil.GetDisplayedUnit(GameTooltip)
                 if tooltipUnit then
-                    local tooltipGUID = UnitGUID(tooltipUnit)
-                    if tooltipGUID == inspectGUID then
+                    local guidSuccess, tooltipGUID = pcall(UnitGUID, tooltipUnit)
+                    -- Use pcall for GUID comparison to handle secret/tainted strings
+                    local matchSuccess, isMatch = pcall(function() return tooltipGUID and tooltipGUID == inspectGUID end)
+                    if guidSuccess and matchSuccess and isMatch then
                         -- Find and update the "Target player to get ilvl" line
                         local numLines = GameTooltip:NumLines()
                         for i = 1, numLines do
