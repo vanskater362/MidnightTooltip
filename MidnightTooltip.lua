@@ -255,12 +255,12 @@ local function RequestInspectIfNeeded(unit)
     local sameGuidSuccess, isSameGuid = pcall(function() return guid == lastInspectedGUID end)
     if sameGuidSuccess and isSameGuid and currentTime - lastInspectTime < 30 then return end
     
+    -- Don't call protected functions during combat (CheckInteractDistance, NotifyInspect)
+    if InCombatLockdown() then return end
+    
     -- Check range
     local inRangeSuccess, inRange = pcall(CheckInteractDistance, unit, 1)
     if not inRangeSuccess or not inRange then return end
-    
-    -- Don't call NotifyInspect during combat (protected function)
-    if InCombatLockdown() then return end
     
     -- Send inspect request
     local notifySuccess = pcall(NotifyInspect, unit)
@@ -858,8 +858,12 @@ function MidnightTooltip:OnInitialize()
                         for i = 1, numLines do
                             local lineText = _G["GameTooltipTextLeft" .. i]
                             if lineText then
-                                local text = lineText:GetText()
-                                if text and text:find("Target player to get ilvl") then
+                                -- Wrap GetText and find in pcall to handle secret/tainted strings
+                                local findSuccess, foundMatch = pcall(function()
+                                    local text = lineText:GetText()
+                                    return text and text:find("Target player to get ilvl")
+                                end)
+                                if findSuccess and foundMatch then
                                     local cachedIlvl = inspectedIlvls[inspectGUID]
                                     local ilvlColor = GetItemLevelColor(cachedIlvl)
                                     lineText:SetText(format("|cFFFFFFFFItem Level: |r%s%d|r", ilvlColor, floor(cachedIlvl)))
